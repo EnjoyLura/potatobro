@@ -411,9 +411,17 @@ export class UI {
         } else if (this.bossNode.active) this.bossNode.active = false;
         // low hp vignette
         const k = hp / mhp;
-        const va = k < 0.4 ? Math.round((0.4 - k) / 0.4 * 200 + (Math.sin(Date.now() / 150) + 1) * 15) : 0;
+        let va = k < 0.4 ? Math.round((0.4 - k) / 0.4 * 200 + (Math.sin(Date.now() / 150) + 1) * 15) : 0;
+        // red flash when hit, fading over ~0.35 s
+        const now = Date.now();
+        if (this.hurtAt) {
+            const h = 1 - (now - this.hurtAt) / 350;
+            if (h > 0) va = Math.max(va, Math.round(230 * h)); else this.hurtAt = 0;
+        }
         if (L.va !== va) { L.va = va; setAlpha(this.vignette, va); }
     }
+    private hurtAt = 0;
+    flashHurt() { this.hurtAt = Date.now(); }
 
     toast(text: string, color = COL.gold, y = 120, size = 34) {
         const l = label(this.popup, text, size, color, { outline: 5 });
@@ -609,7 +617,7 @@ export class UI {
         const recycle = Math.max(1, Math.round(run.itemPrice(it.id) * 0.35));
         const take = button(s, 200, 70, '拿取', COL.btn, () => { run.addItem(it.id); Sfx.buy(); onDone(); }, 30);
         take.node.setPosition(-115, this.B + 55);
-        const rec = button(s, 200, 70, `回收 ◆${recycle}`, '#4f8a5b', () => { run.mats += recycle; Sfx.pickup(); onDone(); }, 26);
+        const rec = button(s, 200, 70, `回收 ◆${recycle}`, '#4f8a5b', () => { run.mats += recycle; Sfx.sell(); onDone(); }, 26);
         rec.node.setPosition(115, this.B + 55);
     }
 
@@ -766,13 +774,13 @@ export class UI {
             const canC = run.canCombine(idx);
             const cb = button(p, 150, 56, '合成', canC ? '#7e57c2' : COL.btnDark, () => {
                 if (!canC) { Sfx.deny(); this.toast('需要两把相同阶级的同种武器', COL.bad, 0, 24); return; }
-                run.combine(idx); Sfx.levelUp(); close(); onChange();
+                run.combine(idx); Sfx.combine(); close(); onChange();
             }, 24);
             cb.node.setPosition(-85, -ph / 2 + 45);
             const sv = run.sellValue(w);
             const sb = button(p, 150, 56, `出售 ◆${sv}`, run.weapons.length > 1 ? '#b8473f' : COL.btnDark, () => {
                 if (run.weapons.length <= 1) { Sfx.deny(); this.toast('至少保留一把武器', COL.bad, 0, 24); return; }
-                run.sell(idx); Sfx.buy(); close(); onChange();
+                run.sell(idx); Sfx.sell(); close(); onChange();
             }, 24);
             sb.node.setPosition(85, -ph / 2 + 45);
         }, 380, 470);

@@ -712,6 +712,62 @@ export function registerArt() {
         line(ctx, 8, 8, 32, 32, OUT, 10); line(ctx, 32, 8, 8, 32, OUT, 10);
         line(ctx, 8, 8, 32, 32, '#ff3b3b', 6); line(ctx, 32, 8, 8, 32, '#ff3b3b', 6);
     });
+    // impact star: four sharp spikes plus a hot core (drawn additively)
+    Atlas.add('hitstar', 48, 48, (ctx) => {
+        const g = ctx.createRadialGradient(24, 24, 0, 24, 24, 24);
+        g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.25, 'rgba(255,255,255,0.7)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = g; ctx.fillRect(0, 0, 48, 48);
+        ctx.fillStyle = '#ffffff';
+        const spike = (a: number, L: number, wd: number) => {
+            ctx.beginPath();
+            ctx.moveTo(24 + Math.cos(a) * L, 24 + Math.sin(a) * L);
+            ctx.lineTo(24 + Math.cos(a + Math.PI / 2) * wd, 24 + Math.sin(a + Math.PI / 2) * wd);
+            ctx.lineTo(24 - Math.cos(a) * L, 24 - Math.sin(a) * L);
+            ctx.lineTo(24 + Math.cos(a - Math.PI / 2) * wd, 24 + Math.sin(a - Math.PI / 2) * wd);
+            ctx.closePath(); ctx.fill();
+        };
+        spike(0, 23, 3.2); spike(Math.PI / 2, 23, 3.2); spike(Math.PI / 4, 13, 2.2); spike(-Math.PI / 4, 13, 2.2);
+    });
+    // muzzle flash pointing right (+x), origin on the left
+    Atlas.add('muzzle', 44, 28, (ctx, w, h) => {
+        const g = ctx.createRadialGradient(10, h / 2, 0, 10, h / 2, 14);
+        g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+        ctx.fillStyle = 'rgba(255,255,255,0.95)';
+        ctx.beginPath(); ctx.moveTo(4, h / 2 - 5); ctx.lineTo(w - 1, h / 2); ctx.lineTo(4, h / 2 + 5); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.75)';
+        ctx.beginPath(); ctx.moveTo(8, h / 2); ctx.lineTo(26, 2); ctx.lineTo(14, h / 2); ctx.lineTo(26, h - 2); ctx.closePath(); ctx.fill();
+    });
+    // tracer streak: bright head on the right fading to the left
+    Atlas.add('streak', 48, 8, (ctx, w, h) => {
+        const g = ctx.createLinearGradient(0, 0, w, 0);
+        g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.75, 'rgba(255,255,255,0.75)'); g.addColorStop(1, 'rgba(255,255,255,1)');
+        rr(ctx, 0, 1, w, h - 2, (h - 2) / 2); ctx.fillStyle = g; ctx.fill();
+    });
+    Atlas.add('glow', 64, 64, (ctx, w) => {
+        const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+        g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.2, 'rgba(255,255,255,0.75)'); g.addColorStop(0.5, 'rgba(255,255,255,0.25)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = g; ctx.fillRect(0, 0, 64, 64);
+    });
+    // soft fluffy smoke
+    Atlas.add('smoke', 48, 48, (ctx) => {
+        const blob = (x: number, y: number, r: number) => {
+            const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+            g.addColorStop(0, 'rgba(255,255,255,0.95)'); g.addColorStop(0.6, 'rgba(255,255,255,0.6)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+        };
+        blob(24, 27, 16); blob(15, 21, 12); blob(33, 20, 12); blob(24, 15, 11);
+    });
+    Atlas.add('shock', 128, 128, (ctx) => {
+        circ(ctx, 64, 64, 58, undefined, 'rgba(255,255,255,0.35)', 10);
+        circ(ctx, 64, 64, 60, undefined, '#ffffff', 3.5);
+    });
+    // gib chunk with the same dark outline as the characters (tinted per enemy)
+    Atlas.add('gib', 16, 14, (ctx) => {
+        poly(ctx, [3, 5, 7, 2, 12, 3, 14, 8, 10, 12, 4, 11], '#ffffff', OUT, 2);
+        ell(ctx, 7, 5, 2, 1.2, 'rgba(255,255,255,0.9)');
+    });
+    Atlas.add('casing', 10, 6, (ctx) => { rrFill(ctx, 1, 1, 8, 4, 1.5, '#ffca28', OUT, 1.2); });
     Atlas.add('px', 8, 8, (ctx) => { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 8, 8); });
     Atlas.add('circle', 64, 64, (ctx) => circ(ctx, 32, 32, 31, '#ffffff'));
     // pickups

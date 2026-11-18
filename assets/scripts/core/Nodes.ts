@@ -1,5 +1,5 @@
 // Node creation helpers and pools.
-import { Node, Sprite, UITransform, Layers, Color, Vec3 } from 'cc';
+import { Node, Sprite, UITransform, Layers, Color, Vec3, Material, gfx, builtinResMgr } from 'cc';
 import { Atlas } from './Atlas';
 
 const UI_LAYER = Layers.Enum.UI_2D;
@@ -52,11 +52,13 @@ export function setAlpha(s: Sprite, a: number) {
 export class SpritePool {
     parent: Node;
     free: Sprite[] = [];
-    constructor(parent: Node) { this.parent = parent; }
+    mat: Material;
+    constructor(parent: Node, mat: Material = null) { this.parent = parent; this.mat = mat; }
     get(frame: string, w?: number, h?: number, ax = 0.5, ay = 0.5): Sprite {
         let s = this.free.pop();
         if (!s) {
             s = mkSprite(this.parent, frame, w, h, ax, ay);
+            if (this.mat) s.customMaterial = this.mat;
         } else {
             s.node.active = true;
             setFrame(s, frame, w, h);
@@ -74,3 +76,32 @@ export class SpritePool {
 }
 
 export const V3 = new Vec3();
+
+let _additive: Material | null | undefined;
+/** Shared additive-blend sprite material for glows, flashes and sparks (null if it cannot be created). */
+export function additiveMaterial(): Material | null {
+    if (_additive !== undefined) return _additive;
+    try {
+        // reuse the effect of the engine's default sprite material ('for2d/builtin-sprite' in 3.8)
+        const base = builtinResMgr.get<Material>('ui-sprite-material');
+        const m = new Material();
+        m.initialize({
+            effectAsset: base ? base.effectAsset : undefined,
+            effectName: base ? undefined : 'for2d/builtin-sprite',
+            defines: { USE_TEXTURE: true },
+            states: {
+                blendState: {
+                    targets: [{
+                        blend: true,
+                        blendSrc: gfx.BlendFactor.SRC_ALPHA, blendDst: gfx.BlendFactor.ONE,
+                        blendSrcAlpha: gfx.BlendFactor.ONE, blendDstAlpha: gfx.BlendFactor.ONE,
+                    }],
+                },
+            },
+        });
+        _additive = m.passes && m.passes.length ? m : null;
+    } catch (e) {
+        _additive = null;
+    }
+    return _additive;
+}

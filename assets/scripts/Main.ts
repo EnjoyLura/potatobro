@@ -42,6 +42,7 @@ export class Main extends Component implements WorldHost, UIHost {
         input.on(Input.EventType.KEY_UP, this.onKeyUp, this);
         view.on('canvas-resize', this.onResize, this);
         game.on(Game.EVENT_HIDE, () => { if (this.state === 'play') this.pause(); });
+        Sfx.load();
         Sfx.startMusic();
         this.ui.showMenu();
     }
@@ -95,6 +96,8 @@ export class Main extends Component implements WorldHost, UIHost {
     shakeEnabled() { return Save.data.shake; }
     viewSize() { const v = view.getVisibleSize(); return { w: v.width, h: v.height }; }
     onElite(text: string) { this.ui.toast(text, '#ff5c5c', 60, 44); }
+    onPlayerHurt() { this.ui.flashHurt(); }
+    onLevelUp() { this.ui.toast('升级！', COL.gold, -60, 34); }
 
     waveBanner() {
         const r = this.runObj;

@@ -2,7 +2,7 @@
 import { Node, Sprite, UITransform } from 'cc';
 import { Atlas } from '../core/Atlas';
 import { drawArena } from '../core/Art';
-import { mkNode, mkSprite, SpritePool, setFrame, setTint, setAlpha, hexColor } from '../core/Nodes';
+import { mkNode, mkSprite, SpritePool, setFrame, setTint, setAlpha, hexColor, additiveMaterial } from '../core/Nodes';
 import { Sfx } from '../core/Sfx';
 import { TAU, clamp, rand, randInt, chance, dist2, angleDiff, SpatialGrid, pick, lerp } from '../core/Util';
 import { Run } from './Run';
@@ -20,7 +20,11 @@ export interface WorldHost {
     shakeEnabled(): boolean;
     viewSize(): { w: number; h: number };
     onElite(text: string): void;
+    onPlayerHurt(): void;
+    onLevelUp(): void;
 }
+
+const MAX_PARTICLES = 420;
 
 function parseHex(h: string) {
     const c = hexColor(h);
@@ -35,6 +39,8 @@ class Enemy {
     state = 0; stateT = 0; timer = 0; timer2 = 0; dirX = 0; dirY = 0;
     burnT = 0; burnDps = 0; burnTick = 0;
     alive = true; hitCd = 0; id = 0; life = 0; flip = 1; scale = 1;
+    punch = 0;      // squash amount after a hit (decays)
+    spawnT = 0;     // grows 0..1 while popping in
 }
 
 class Bullet {
@@ -50,6 +56,8 @@ class Pickup {
 
 class Particle {
     spr: Sprite; x = 0; y = 0; vx = 0; vy = 0; life = 0; max = 1; s0 = 1; s1 = 1; a0 = 255; a1 = 0; vr = 0; drag = 0; sx = 1; sy = 1; pool: SpritePool;
+    // optional height simulation for gibs / casings: z above ground, falls with gravity, bounces once
+    z = 0; vz = 0; grav = 0; bounces = 0; landCol: number[] = null; ease = 0;
 }
 
 class DmgNum { node: Node; digits: Sprite[] = []; x = 0; y = 0; t = 0; life = 0.7; active = false; big = false }
@@ -75,7 +83,9 @@ export class World {
     root: Node;
     run: Run = null;
     // layers
-    lGround: Node; lDecal: Node; lPickup: Node; lStruct: Node; lEnemy: Node; lPlayer: Node; lWeapon: Node; lBullet: Node; lFx: Node; lNum: Node;
+    lGround: Node; lDecal: Node; lPickup: Node; lStruct: Node; lEnemy: Node; lPlayer: Node; lWeapon: Node; lBullet: Node; lFx: Node; lGlow: Node; lNum: Node;
+    // feel: hit-stop freezes the simulation for a few frames, slow-mo eases back to full speed
+    hitStop = 0; slowT = 0; slowDur = 0; kickX = 0; kickY = 0;
     pools: { [k: string]: SpritePool } = {};
     // player
     px = 0; py = 0; pvx = 0; pvy = 0; playerSpr: Sprite; playerFrame = ''; facing = 1; iframe = 0; flashT = 0; walkT = 0;
@@ -110,12 +120,15 @@ export class World {
         this.lWeapon = mkNode('weapon', this.root);
         this.lBullet = mkNode('bullet', this.root);
         this.lFx = mkNode('fx', this.root);
+        this.lGlow = mkNode('glow', this.root);
         this.lNum = mkNode('num', this.root);
         for (const k of ['decal', 'pickup', 'struct', 'enemy', 'bullet', 'fx', 'fxTop', 'marker']) {
             const parentNode = k === 'decal' ? this.lDecal : k === 'pickup' ? this.lPickup : k === 'struct' ? this.lStruct :
                 k === 'enemy' ? this.lEnemy : k === 'bullet' ? this.lBullet : k === 'marker' ? this.lDecal : this.lFx;
             this.pools[k] = new SpritePool(parentNode);
         }
+        // additive glow layer (flashes, sparks, muzzle, tracers); falls back to normal blending
+        this.pools.glow = new SpritePool(this.lGlow, additiveMaterial());
         // floor
         const canvas = drawArena(AW, AH, BORDER);
         const fn = mkNode('floor', this.lGround);
@@ -166,6 +179,7 @@ export class World {
         this.px = 0; this.py = 0;
         this.camX = 0; this.camY = 0;
         this.iframe = 1.0;
+        this.hitStop = 0; this.slowT = 0; this.kickX = 0; this.kickY = 0;
         this.waveDur = run.endless ? 60 : waveDuration(run.wave);
         this.waveTime = this.waveDur;
         this.spawnTimers = SPAWN_RULES.map((r, i) => 0.6 + i * 0.4);
@@ -219,8 +233,9 @@ export class World {
 
     endWave() {
         this.running = false;
-        // pop enemies
-        for (const e of this.enemies) this.puff(e.x, e.y, e.def, e.r);
+        // pop every remaining enemy (no drops)
+        this.enemies.forEach((e, i) => { if (i < 50) this.deathFx(e, false); else this.puff(e.x, e.y, e.def, e.r); });
+        if (this.enemies.length) { Sfx.kill(true); this.addShake(6); }
         for (const e of this.enemies) this.pools.enemy.put(e.spr);
         this.enemies.length = 0;
         for (const m of this.markers) this.pools.marker.put(m.spr);
@@ -241,7 +256,26 @@ export class World {
     }
 
     // ================================================================ main update
-    update(dt: number) {
+    /** Freeze the action for a moment (impact weight). */
+    freeze(t: number) { this.hitStop = Math.max(this.hitStop, t); }
+    /** Slow motion that eases back to normal over `t` seconds. */
+    slowMo(t: number) { if (t > this.slowT) { this.slowT = t; this.slowDur = t; } }
+    /** Camera kick (screen units) in a direction, e.g. recoil of a heavy shot. */
+    kick(dx: number, dy: number, amount: number) {
+        if (!this.host.shakeEnabled()) return;
+        const l = Math.hypot(dx, dy) || 1;
+        this.kickX += dx / l * amount; this.kickY += dy / l * amount;
+    }
+
+    update(realDt: number) {
+        // time scale: hit-stop nearly freezes, slow-mo eases out
+        let dt = realDt;
+        if (this.hitStop > 0) { this.hitStop -= realDt; dt = realDt * 0.04; }
+        else if (this.slowT > 0) {
+            this.slowT = Math.max(0, this.slowT - realDt);
+            const k = 1 - this.slowT / this.slowDur;
+            dt = realDt * (0.25 + 0.75 * k * k);
+        }
         this.time += dt;
         if (this.running) {
             this.updatePlayer(dt);
@@ -263,7 +297,7 @@ export class World {
         }
         this.updateParticles(dt);
         this.updateNums(dt);
-        this.updateCamera(dt);
+        this.updateCamera(realDt);
         this.renderPlayer(dt);
     }
 
@@ -368,14 +402,17 @@ export class World {
         if (chance(Math.min(60, st.dodge) / 100)) {
             this.iframe = 0.2;
             Sfx.dodge();
-            this.spawnFx('puff', this.px, this.py, 0, 40, 0.3, 0.7, 1.4, 180, 0, [255, 255, 255]);
+            this.spawnFx('smoke', this.px, this.py + 10, 0, 40, 0.35, 0.7, 1.5, 170, 0, [255, 255, 255]);
+            this.glow('glow', this.px, this.py + 14, 0, 0, 0.2, 1.2, 1.8, 120, [160, 220, 255]);
             return;
         }
         if (this.shieldLeft > 0) {
             this.shieldLeft--;
             this.iframe = 0.5;
-            this.spawnFx('ringsoft', this.px, this.py, 0, 0, 0.35, 0.6, 1.4, 255, 0, [100, 220, 255]);
-            Sfx.zap();
+            this.glow('shock', this.px, this.py + 12, 0, 0, 0.3, 0.4, 1.0, 255, [110, 220, 255]);
+            this.glow('glow', this.px, this.py + 12, 0, 0, 0.25, 1.5, 2.5, 200, [110, 220, 255]);
+            this.sparks(this.px, this.py + 12, 0, 0, Math.PI, 10, 420, [150, 230, 255]);
+            Sfx.shield();
             return;
         }
         const arm = st.armor;
@@ -384,9 +421,13 @@ export class World {
         run.hp -= final;
         this.iframe = 0.4;
         this.flashT = 0.15;
-        this.addShake(7);
+        this.addShake(9);
+        this.freeze(0.06);
+        this.host.onPlayerHurt();
         Sfx.hurt();
         this.showNum(this.px, this.py + 40, final, 255, 70, 70, false, false);
+        this.glow('hitstar', this.px, this.py + 16, 0, 0, 0.14, 0.8, 1.6, 255, [255, 90, 90]);
+        this.sparks(this.px, this.py + 14, 0, 0, Math.PI, 8, 380, [255, 120, 110]);
         if (src && run.special.thorns && src.alive) {
             this.damageEnemy(src, Math.round(run.special.thorns * (1 + arm * 0.1)), false, src.x - this.px, src.y - this.py, 10, null);
         }
@@ -396,7 +437,9 @@ export class World {
                 run.hp = Math.ceil(run.maxHp * 0.5);
                 this.iframe = 2;
                 this.explode(this.px, this.py, 220, 40 + run.wave * 5, true);
-                Sfx.levelUp();
+                this.glow('shock', this.px, this.py + 12, 0, 0, 0.5, 0.3, 3.2, 255, [255, 240, 160]);
+                this.slowMo(0.6);
+                Sfx.revive();
                 return;
             }
             run.hp = 0;
@@ -409,10 +452,15 @@ export class World {
         this.deadT = 0;
         this.running = false;
         this.spawnBurst(this.px, this.py, [255, 255, 255], 26, 380);
+        this.gibs(this.px, this.py, [200, 210, 230], 12, 1.2);
+        this.glow('glow', this.px, this.py + 14, 0, 0, 0.35, 2, 5, 255, [255, 255, 255]);
+        this.glow('shock', this.px, this.py + 14, 0, 0, 0.45, 0.3, 2.6, 255, [255, 200, 200]);
         this.spawnDecal(this.px, this.py, [180, 30, 40], 1.6);
         this.playerSpr.node.setScale(0, 0, 1);
         for (const w of this.weapons) w.spr.node.active = false;
-        this.addShake(14);
+        this.addShake(16);
+        this.freeze(0.1);
+        this.slowMo(1.0);
         Sfx.gameOver();
     }
 
@@ -444,7 +492,8 @@ export class World {
             const elites = run.endless ? (run.wave % 5 === 0 ? ['boss'] : ['juggernaut', 'queen'].slice(0, 1 + (run.wave % 2))) : elitesForWave(run.wave, run.danger);
             for (const id of elites) this.spawnGroup(id, 1, true);
             if (elites.length) {
-                Sfx.bossRoar();
+                if (elites.indexOf('boss') >= 0) Sfx.bossRoar(); else Sfx.eliteAlarm();
+                this.addShake(8);
                 this.host.onElite(elites.indexOf('boss') >= 0 ? '首领来袭！' : '精英来袭！');
             }
         }
@@ -504,8 +553,14 @@ export class World {
         e.spr.node.setPosition(x, y);
         this.enemies.push(e);
         if (def.boss || def.elite) { if (!this.boss || def.boss) this.boss = e; }
-        // spawn pop
-        this.spawnFx('puff', x, y, 0, 0, 0.3, 0.5, 1.3, 160, 0, [200, 180, 220]);
+        // spawn pop: scale in with overshoot (see render) plus a puff
+        e.spawnT = 0;
+        e.spr.node.setScale(0.01, 0.01, 1);
+        this.spawnFx('smoke', x, y + 6, 0, 0, 0.35, 0.5, 1.2 * Math.max(1, e.r / 22), 150, 0, [200, 185, 225]);
+        if (def.elite) {
+            this.glow('shock', x, y + 10, 0, 0, 0.5, 0.3, 2.4, 255, [255, 90, 90]);
+            this.spawnFx('smoke', x, y, 0, 30, 0.7, 1.5, 3.5, 180, 0, [120, 90, 140]);
+        }
         return e;
     }
 
@@ -665,8 +720,18 @@ export class World {
             const sq = Math.sin(e.t * 10 + e.phase) * 0.06;
             const frame = e.flashT > 0 ? e.def.sprite + '_w' : e.def.sprite;
             if (frame !== e.frame) { e.frame = frame; e.spr.spriteFrame = Atlas.get(frame); }
+            // pop-in with overshoot
+            let sp = 1;
+            if (e.spawnT < 1) {
+                e.spawnT = Math.min(1, e.spawnT + dt / 0.22);
+                const t = e.spawnT, c1 = 2.2;
+                sp = 1 + (c1 + 1) * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+            }
+            // hit squash: wider and flatter for a moment
+            if (e.punch > 0) e.punch = Math.max(0, e.punch - dt * 7);
+            const pw = 1 + e.punch * 0.28, ph = 1 - e.punch * 0.22;
             e.spr.node.setPosition(e.x, e.y + e.r * 0.3);
-            e.spr.node.setScale(e.flip * (1 - sq) * e.scale, (1 + sq) * e.scale, 1);
+            e.spr.node.setScale(e.flip * (1 - sq) * e.scale * sp * pw, (1 + sq) * e.scale * sp * ph, 1);
         }
         // clean
         for (let i = this.enemies.length - 1; i >= 0; i--) if (!this.enemies[i].alive) this.enemies.splice(i, 1);
@@ -758,13 +823,13 @@ export class World {
         setTint(b.spr, color[0], color[1], color[2]);
         b.spr.node.setPosition(x, y);
         this.bullets.push(b);
+        Sfx.spit();
     }
 
     enemyExplode(x: number, y: number, radius: number, dmg: number) {
-        this.spawnFx('ringsoft', x, y, 0, 0, 0.35, 0.3, radius / 50, 255, 0, [255, 120, 60]);
-        this.spawnBurst(x, y, [255, 160, 60], 14, 300);
-        Sfx.explode();
-        this.addShake(6);
+        this.boomFx(x, y, radius, true, [255, 110, 60]);
+        Sfx.explode(true);
+        this.addShake(8);
         if (dist2(x, y, this.px, this.py) < (radius + PLAYER_R) * (radius + PLAYER_R)) this.hurtPlayer(dmg);
     }
 
@@ -821,15 +886,29 @@ export class World {
         else if (crit) this.showNum(e.x, e.y + e.r, dmg, 255, 220, 60, true, false);
         else this.showNum(e.x, e.y + e.r, dmg, 255, 255, 255, false, false);
         if (!isBurn) {
-            Sfx.hit();
+            const heavy = kb >= 8 || dmg >= 40;
+            Sfx.hit(crit, heavy);
+            e.punch = Math.min(1, e.punch + (crit || heavy ? 1 : 0.7));
+            // impact flash on the side the hit came from, sparks spraying through the enemy
+            const l = Math.hypot(dirx, diry);
+            const ux = l > 0 ? dirx / l : 0, uy = l > 0 ? diry / l : 0;
+            const ix = e.x - ux * e.r * 0.5, iy = e.y + 10 - uy * e.r * 0.5;
+            const big = crit || heavy;
+            if (this.particles.length < MAX_PARTICLES - 40 || big) {
+                this.glow('hitstar', ix, iy, 0, 0, big ? 0.13 : 0.09, big ? 0.7 : 0.45, big ? 1.5 : 0.9, 255,
+                    crit ? [255, 225, 90] : [255, 255, 235], Math.random() * 90);
+                this.sparks(ix, iy, ux, uy, l > 0 ? 0.9 : Math.PI, big ? 6 : 3, big ? 520 : 380, crit ? [255, 210, 80] : [255, 245, 200]);
+            }
+            if (crit) {
+                this.glow('shock', e.x, e.y + 10, 0, 0, 0.18, 0.15, 0.55 * Math.max(1, e.r / 22), 255, [255, 220, 90]);
+                this.addShake(2.5);
+            }
             // lifesteal
             let ls = run.stats.lifesteal / 100;
             if (wi && (wi as any).def && (wi as WeaponInst).def.lifesteal) ls += (wi as WeaponInst).def.lifesteal;
             if (wi && (wi as Bullet).lifesteal) ls += (wi as Bullet).lifesteal;
             if (ls > 0 && this.lifestealCount < 10 && chance(ls)) { this.lifestealCount++; this.healPlayer(1); }
             if (crit && run.special.critHeal && chance(run.special.critHeal / 100)) this.healPlayer(1);
-            // hit sparks
-            this.spawnFx('spark', e.x + rand(-8, 8), e.y + rand(-8, 8) + 10, rand(-200, 200), rand(-200, 200), 0.18, 1, 0.3, 255, 0, [255, 255, 220], true);
         }
         if (e.hp <= 0) this.killEnemy(e, false);
     }
@@ -857,11 +936,16 @@ export class World {
         if (!e.alive) return;
         const run = this.run;
         this.removeEnemy(e);
-        const col = this.enemyColor(e.def);
-        this.spawnDecal(e.x, e.y, col, e.r / 22);
-        this.spawnBurst(e.x, e.y, col, e.def.elite ? 30 : 8, e.def.elite ? 420 : 260);
-        if (e.def.elite) { this.addShake(12); Sfx.explode(); }
-        Sfx.kill();
+        this.deathFx(e, true);
+        if (e.def.elite) {
+            // big moment: freeze, slow-mo, explosion
+            this.boomFx(e.x, e.y, e.def.boss ? 260 : 170, true, this.enemyColor(e.def));
+            this.addShake(e.def.boss ? 16 : 12);
+            this.freeze(e.def.boss ? 0.14 : 0.09);
+            this.slowMo(e.def.boss ? 1.4 : 0.8);
+            Sfx.explode(true);
+        }
+        Sfx.kill(e.def.elite || e.r >= 30);
         if (silent) return;
         if (e.def.ai !== 'tree' && e.def.ai !== 'looter') run.kills++;
         // drops
@@ -898,11 +982,9 @@ export class World {
 
     explode(x: number, y: number, radius: number, dmg: number, big: boolean) {
         const rad = radius * (1 + this.run.stats.explSize / 100);
-        this.spawnFx('ringsoft', x, y, 0, 0, 0.32, 0.3, rad / 52, 255, 0, [255, 200, 90]);
-        this.spawnFx('soft', x, y, 0, 0, 0.25, rad / 14, rad / 10, 220, 0, [255, 240, 180]);
-        this.spawnBurst(x, y, [255, 170, 60], big ? 20 : 10, 320);
-        Sfx.explode();
-        this.addShake(big ? 8 : 4);
+        this.boomFx(x, y, rad, big, [255, 170, 60]);
+        Sfx.explode(big);
+        this.addShake(big ? 8 : 5);
         this.grid.query(x, y, rad + 80, this.q);
         const list = this.q.slice();
         for (const e of list) {
@@ -984,14 +1066,14 @@ export class World {
             const d = Math.min(range, Math.hypot(target.x - wi.x, target.y - wi.y) + 20);
             wi.animT = 0; wi.animDur = Math.min(0.32, Math.max(0.16, this.weaponCooldown(def, tier) * 0.7));
             wi.reach = d; wi.hitIds.length = 0; wi.angle = ang;
-            Sfx.swing();
+            Sfx.swing(def.id === 'fist' || def.id === 'wrench' ? 1 : 2);
         } else if (def.attack === 'sweep') {
             wi.animT = 0; wi.animDur = 0.24;
             wi.sweepFrom = ang - (def.arc || 1.6) / 2; wi.sweepTo = ang + (def.arc || 1.6) / 2;
             wi.reach = range;
             wi.hitIds.length = 0;
             this.sweepHit(wi, ang, range);
-            Sfx.swing();
+            Sfx.swing(def.id === 'hammer' ? 1 : 0);
         } else if (def.attack === 'shoot') {
             this.shoot(wi, ang, range);
             wi.recoil = 8;
@@ -1018,6 +1100,12 @@ export class World {
             // hit test at the tip
             const sz = Atlas.sizes[def.sprite];
             const tipX = x + Math.cos(wi.angle) * sz.w * 0.6, tipY = y + Math.sin(wi.angle) * sz.w * 0.6;
+            // motion streak while extending
+            if (t < 0.5 && this.particles.length < MAX_PARTICLES - 60) {
+                const st = this.glow('streak', tipX - Math.cos(wi.angle) * 20, tipY + 10 - Math.sin(wi.angle) * 20, 0, 0, 0.1, 1, 1, 150,
+                    def.id === 'chainsaw' ? [255, 200, 120] : [220, 240, 255], wi.angle * 180 / Math.PI);
+                st.sx = 1.1; st.sy = 1.2;
+            }
             this.grid.query(tipX, tipY, 26 + 80, this.q);
             for (const e of this.q) {
                 if (!e.alive || wi.hitIds.indexOf(e.id) >= 0) continue;
@@ -1043,10 +1131,13 @@ export class World {
     sweepHit(wi: WeaponInst, ang: number, range: number) {
         const def = wi.def;
         const arc = def.arc || 1.6;
-        const fx = this.spawnFx('slash', this.px + Math.cos(ang) * 8, this.py + Math.sin(ang) * 8 + 10, 0, 0, 0.2, range / 60, range / 52, 220, 0,
-            def.id === 'flamesword' ? [255, 150, 60] : def.id === 'hammer' ? [230, 220, 200] : [180, 240, 255]);
-        fx.spr.node.angle = ang * 180 / Math.PI;
-        fx.sy = (arc / 1.6);
+        const col = def.id === 'flamesword' ? [255, 150, 60] : def.id === 'hammer' ? [255, 235, 200] : [170, 235, 255];
+        const sx = this.px + Math.cos(ang) * 8, sy = this.py + Math.sin(ang) * 8 + 10;
+        // two arcs: a wide soft one and a bright thin leading edge
+        const fx = this.glow('slash', sx, sy, 0, 0, 0.2, range / 62, range / 50, 230, col, ang * 180 / Math.PI);
+        fx.sy = arc / 1.6;
+        const fx2 = this.glow('slash', sx, sy, 0, 0, 0.12, range / 58, range / 54, 255, [255, 255, 255], ang * 180 / Math.PI + 8);
+        fx2.sy = arc / 1.6 * 0.6;
         this.grid.query(this.px, this.py, range + 80, this.q);
         const list = this.q.slice();
         for (const e of list) {
@@ -1100,15 +1191,31 @@ export class World {
             b.spr = this.pools.bullet.get(spec.sprite);
             const s = (spec.size || 1) * (def.id === 'flamethrower' ? rand(0.8, 1.2) : 1);
             b.spr.node.setScale(s, s, 1);
-            if (spec.tint) { const c = parseHex(spec.tint); setTint(b.spr, c[0], c[1], c[2]); }
+            if (spec.tint) { const c = parseHex(spec.tint); setTint(b.spr, c[0], c[1], c[2]); b.color = c; }
             b.spr.node.angle = a * 180 / Math.PI;
             b.spr.node.setPosition(b.x, b.y);
             this.bullets.push(b);
         }
-        // muzzle flash
-        if (def.id !== 'flamethrower') this.spawnFx('soft', mx, my, 0, 0, 0.08, 0.9, 0.5, 255, 0, [255, 230, 150]);
-        const kind = def.id === 'shotgun' || def.id === 'rocket' || def.id === 'grenade' ? 1 : def.id === 'sniper' ? 2 : def.id === 'flamethrower' ? 3 : def.id === 'slingshot' ? 5 : 0;
-        Sfx.shoot(kind);
+        // muzzle flash, shell casings and recoil kick
+        const deg = ang * 180 / Math.PI;
+        const heavy = def.id === 'shotgun' || def.id === 'sniper' || def.id === 'rocket';
+        const gun = def.classes.indexOf('gun') >= 0;
+        if (def.id !== 'flamethrower' && def.id !== 'grenade' && def.id !== 'slingshot') {
+            const mcol = def.id === 'medigun' ? [140, 255, 170] : [255, 225, 140];
+            const m = this.glow('muzzle', mx, my, 0, 0, heavy ? 0.09 : 0.06, heavy ? 1.5 : 1.0, heavy ? 1.1 : 0.7, 255, mcol, deg);
+            m.ease = 1;
+            this.glow('glow', mx, my, 0, 0, 0.08, heavy ? 1.3 : 0.7, heavy ? 1.6 : 0.9, 200, mcol);
+        }
+        if (gun && def.id !== 'rocket' && this.particles.length < MAX_PARTICLES - 60) {
+            const side = Math.cos(ang) >= 0 ? -1 : 1;
+            const c = this.spawnFx('casing', wi.x, wi.y + 10, side * rand(60, 140) - Math.cos(ang) * 40, 0, rand(0.5, 0.7), 1, 1, 255, 255, [255, 255, 255]);
+            c.z = 6; c.vz = rand(180, 260); c.grav = 900; c.vr = rand(-900, 900); c.drag = 2;
+        }
+        if (heavy) {
+            this.kick(-Math.cos(ang), -Math.sin(ang), def.id === 'sniper' ? 7 : 9);
+            this.addShake(2);
+        }
+        Sfx.shot(def.id);
     }
 
     beam(wi: WeaponInst, ang: number, range: number) {
@@ -1116,13 +1223,14 @@ export class World {
         const sz = Atlas.sizes[def.sprite];
         const sx = wi.x + Math.cos(ang) * sz.w * 0.75, sy = wi.y + Math.sin(ang) * sz.w * 0.75 + 10;
         const ex = sx + Math.cos(ang) * range, ey = sy + Math.sin(ang) * range;
-        const fx = this.spawnFx('beam', (sx + ex) / 2, (sy + ey) / 2, 0, 0, 0.22, 1, 1, 255, 0, [240, 120, 255]);
-        fx.spr.node.angle = ang * 180 / Math.PI;
-        fx.sx = range / 16; fx.sy = 1.6;
-        fx.s0 = 1; fx.s1 = 0.2;
-        const core = this.spawnFx('beam', (sx + ex) / 2, (sy + ey) / 2, 0, 0, 0.15, 1, 1, 255, 0, [255, 255, 255]);
-        core.spr.node.angle = ang * 180 / Math.PI;
-        core.sx = range / 16; core.sy = 0.6;
+        const deg = ang * 180 / Math.PI;
+        const fx = this.glow('beam', (sx + ex) / 2, (sy + ey) / 2, 0, 0, 0.24, 1, 0.15, 255, [230, 100, 255], deg);
+        fx.sx = range / 16; fx.sy = 2.4;
+        const core = this.glow('beam', (sx + ex) / 2, (sy + ey) / 2, 0, 0, 0.16, 1, 0.3, 255, [255, 240, 255], deg);
+        core.sx = range / 16; core.sy = 0.8;
+        this.glow('glow', sx, sy, 0, 0, 0.14, 1.2, 1.8, 255, [230, 120, 255]);
+        this.glow('hitstar', ex, ey, 0, 0, 0.14, 0.6, 1.2, 255, [240, 160, 255], rand(0, 90));
+        this.kick(-Math.cos(ang), -Math.sin(ang), 4);
         Sfx.laser();
         // hit everything on the segment
         const dx = ex - sx, dy = ey - sy, L2 = dx * dx + dy * dy;
@@ -1176,10 +1284,13 @@ export class World {
         for (let i = 0; i < pts.length - 1; i++) {
             const a = pts[i], b = pts[i + 1];
             const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
-            const fx = this.spawnFx('beam', (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, 0, 0, 0.16, 1, 1, 255, 0, [140, 230, 255]);
-            fx.spr.node.angle = Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI;
-            fx.sx = len / 16; fx.sy = 1.1;
+            const deg = Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI;
+            const fx = this.glow('beam', (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, 0, 0, 0.18, 1, 0.4, 255, [120, 210, 255], deg);
+            fx.sx = len / 16; fx.sy = 1.8;
+            const core = this.glow('beam', (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, 0, 0, 0.1, 1, 0.5, 255, [235, 250, 255], deg);
+            core.sx = len / 16; core.sy = 0.6;
         }
+        this.glow('glow', x2, y2, 0, 0, 0.16, 0.8, 1.4, 255, [140, 220, 255]);
     }
 
     // ================================================================ structures
@@ -1195,7 +1306,8 @@ export class World {
             s.cd = rand(0.2, 1);
         }
         this.structures.push(s);
-        this.spawnFx('puff', x, y, 0, 0, 0.3, 0.6, 1.5, 200, 0, [220, 255, 200]);
+        this.spawnFx('smoke', x, y + 6, 0, 0, 0.35, 0.6, 1.4, 190, 0, [220, 255, 200]);
+        if (kind === 'mine' && this.running) Sfx.mine();
     }
 
     updateStructures(dt: number) {
@@ -1223,7 +1335,8 @@ export class World {
                         setTint(b.spr, 160, 255, 120);
                         b.spr.node.setPosition(b.x, b.y);
                         this.bullets.push(b);
-                        Sfx.shoot(5);
+                        this.glow('muzzle', b.x, b.y, 0, 0, 0.06, 0.8, 0.6, 255, [190, 255, 150], a * 180 / Math.PI);
+                        Sfx.shot('turret');
                     }
                 }
             } else {
@@ -1260,8 +1373,17 @@ export class World {
                 b.spr.node.angle += dt * 360;
             } else {
                 if (b.trail && Math.random() < 0.7) {
-                    if (b.explode) this.spawnFx('puff', b.x - b.vx * 0.02, b.y - b.vy * 0.02, rand(-20, 20), rand(-20, 20), 0.35, 0.3, 0.8, 140, 0, [200, 200, 200]);
-                    else this.spawnFx('soft', b.x, b.y, 0, 0, 0.15, 0.6, 0.2, 180, 0, [160, 240, 255]);
+                    if (b.explode) {
+                        this.spawnFx('smoke', b.x - b.vx * 0.02, b.y - b.vy * 0.02, rand(-20, 20), rand(-20, 20), 0.45, 0.3, 0.9, 150, 0, [210, 205, 200]);
+                        this.glow('glow', b.x - b.vx * 0.015, b.y - b.vy * 0.015, 0, 0, 0.08, 0.5, 0.2, 220, [255, 170, 70]);
+                    } else this.glow('glow', b.x, b.y, 0, 0, 0.15, 0.4, 0.1, 200, [160, 240, 255]);
+                }
+                // tracer streak behind fast bullets
+                const bsp2 = b.vx * b.vx + b.vy * b.vy;
+                if (bsp2 > 700 * 700 && !b.explode && (this.time * 60 | 0) % 2 === (i & 1) && this.particles.length < MAX_PARTICLES - 80) {
+                    const st = this.glow('streak', b.x - b.vx * 0.022, b.y - b.vy * 0.022, 0, 0, 0.06, 1, 1, 140,
+                        b.color || [255, 240, 190], Math.atan2(b.vy, b.vx) * 180 / Math.PI);
+                    st.sx = Math.min(2.2, Math.sqrt(bsp2) / 900); st.sy = 0.9;
                 }
                 if (b.grenade) b.spr.node.angle += dt * 500;
                 if (b.weapon && b.weapon.id === 'flamethrower') {
@@ -1306,6 +1428,8 @@ export class World {
                 if (dead && b.explode && b.dist > b.maxDist) this.explode(b.x, b.y, b.explode, b.dmg, true);
             }
             if (dead) {
+                // enemy bullets pop when they land
+                if (b.enemy && this.particles.length < MAX_PARTICLES - 40) this.glow('glow', b.x, b.y, 0, 0, 0.12, 0.5, 0.9, 200, [255, 200, 180]);
                 this.pools.bullet.put(b.spr);
                 this.bullets.splice(i, 1);
             } else {
@@ -1378,24 +1502,44 @@ export class World {
             if (run.bag > 0) { run.bag--; v++; }
             run.mats += v;
             run.matsCollected += v;
-            run.addXp(v);
+            const lv = run.addXp(v);
             if (run.special.healOnPickup && chance(run.special.healOnPickup / 100)) this.healPlayer(1);
             Sfx.pickup();
+            if (this.particles.length < MAX_PARTICLES - 60) this.glow('glow', p.x, p.y + 6, 0, 0, 0.12, 0.5, 0.15, 220, [120, 255, 180]);
+            if (lv > 0) {
+                // level up mid-wave: golden shockwave around the player
+                this.glow('shock', this.px, this.py + 12, 0, 0, 0.5, 0.2, 2.2, 255, [255, 220, 90]);
+                this.glow('glow', this.px, this.py + 12, 0, 0, 0.4, 1.5, 3, 200, [255, 220, 120]);
+                this.sparks(this.px, this.py + 12, 0, 1, Math.PI, 12, 380, [255, 225, 120]);
+                Sfx.levelUp();
+                this.host.onLevelUp();
+            }
         } else if (p.kind === 'fruit') {
             this.healPlayer(3 + Math.round(run.stats.fruitHeal));
+            this.glow('glow', this.px, this.py + 14, 0, 0, 0.3, 1, 2.2, 200, [120, 255, 140]);
+            for (let k = 0; k < 6; k++) {
+                const a = rand(0, TAU);
+                this.glow('dot', this.px + Math.cos(a) * 20, this.py + 10 + Math.sin(a) * 14, Math.cos(a) * 30, rand(60, 120), 0.5, 0.9, 0.2, 255, [140, 255, 150]);
+            }
             Sfx.heal();
         } else {
             run.crates.push(p.tier);
-            Sfx.buy();
+            this.glow('shock', p.x, p.y + 8, 0, 0, 0.35, 0.2, 1.3, 255, p.tier >= 2 ? [200, 150, 255] : [255, 210, 120]);
+            this.sparks(p.x, p.y + 8, 0, 1, Math.PI, 8, 300, [255, 225, 140]);
+            Sfx.crate();
         }
     }
 
     // ================================================================ fx
     spawnFx(frame: string, x: number, y: number, vx: number, vy: number, life: number, s0: number, s1: number, a0: number, a1: number, col: number[], top = false): Particle {
         const pool = top ? this.pools.fxTop : this.pools.fx;
+        return this.addParticle(pool, frame, x, y, vx, vy, life, s0, s1, a0, a1, col);
+    }
+
+    private addParticle(pool: SpritePool, frame: string, x: number, y: number, vx: number, vy: number, life: number, s0: number, s1: number, a0: number, a1: number, col: number[]): Particle {
         const p = new Particle();
         p.pool = pool;
-        if (this.particles.length > 260) {
+        if (this.particles.length > MAX_PARTICLES) {
             const old = this.particles.shift();
             old.pool.put(old.spr);
         }
@@ -1407,6 +1551,82 @@ export class World {
         p.spr.node.setScale(s0, s0, 1);
         this.particles.push(p);
         return p;
+    }
+
+    /** Additive-blend particle (glows, flashes, streaks). Alpha fades to 0. */
+    glow(frame: string, x: number, y: number, vx: number, vy: number, life: number, s0: number, s1: number, a0: number, col: number[], angle = 0): Particle {
+        const p = this.addParticle(this.pools.glow, frame, x, y, vx, vy, life, s0, s1, a0, 0, col);
+        if (angle) p.spr.node.angle = angle;
+        return p;
+    }
+
+    /** Spray of streak sparks in direction (ux,uy) with half-angle `cone` (PI = all around). */
+    sparks(x: number, y: number, ux: number, uy: number, cone: number, n: number, speed: number, col: number[]) {
+        const base = Math.atan2(uy, ux);
+        for (let i = 0; i < n; i++) {
+            const a = base + rand(-cone, cone), s = rand(speed * 0.4, speed);
+            const p = this.addParticle(this.pools.glow, 'spark', x, y, Math.cos(a) * s, Math.sin(a) * s, rand(0.14, 0.26), rand(0.7, 1.2), 0.2, 255, 0, col);
+            p.drag = 7;
+        }
+    }
+
+    /** Chunks that fly up, fall, bounce and leave a small splat where they land. */
+    gibs(x: number, y: number, col: number[], n: number, size = 1) {
+        for (let i = 0; i < n; i++) {
+            if (this.particles.length > MAX_PARTICLES - 30) break;
+            const a = rand(0, TAU), s = rand(70, 260) * Math.sqrt(size);
+            const useGib = i % 2 === 0;
+            const sc = (useGib ? rand(0.7, 1.2) : rand(0.6, 1.1)) * size;
+            const p = this.spawnFx(useGib ? 'gib' : 'dot', x, y + 8, Math.cos(a) * s, Math.sin(a) * s * 0.7, rand(0.6, 0.9), sc, sc * 0.8, 255, 255, col);
+            p.z = rand(8, 20); p.vz = rand(160, 360); p.grav = 1100; p.drag = 1.5;
+            p.vr = useGib ? rand(-720, 720) : 0;
+            p.landCol = col;
+        }
+    }
+
+    /** Death splat: flash silhouette, ring, gibs, sparks and a ground stain. */
+    deathFx(e: Enemy, withDecal: boolean) {
+        const col = this.enemyColor(e.def);
+        const light = [Math.min(255, col[0] + 90), Math.min(255, col[1] + 90), Math.min(255, col[2] + 90)];
+        const k = Math.max(0.8, e.r / 22);
+        // white silhouette that swells and fades
+        const pop = this.spawnFx(e.def.sprite + '_w', e.x, e.y + e.r * 0.3, 0, 0, 0.12, e.scale, e.scale * 1.35, 230, 0, light);
+        pop.sx = e.flip;
+        this.glow('glow', e.x, e.y + 10, 0, 0, 0.16, 0.8 * k, 1.9 * k, 220, light);
+        this.glow('shock', e.x, e.y + 10, 0, 0, 0.2, 0.12 * k, 0.6 * k, 220, light);
+        this.gibs(e.x, e.y, col, e.def.elite ? 16 : 5 + Math.min(3, Math.floor(e.r / 14)), e.def.elite ? 1.5 : Math.min(1.3, k));
+        this.spawnBurst(e.x, e.y, col, e.def.elite ? 24 : 6, e.def.elite ? 420 : 240);
+        if (withDecal) this.spawnDecal(e.x, e.y, col, e.r / 22);
+    }
+
+    /** Layered explosion: flash, fireballs, shockwave, smoke, embers and scorch. */
+    boomFx(x: number, y: number, rad: number, big: boolean, col: number[]) {
+        const k = rad / 60;
+        this.glow('glow', x, y + 10, 0, 0, 0.12, k * 1.4, k * 2.6, 255, [255, 250, 230]);
+        this.glow('shock', x, y + 10, 0, 0, 0.28, k * 0.3, k * 1.05, 255, [255, 220, 150]);
+        const nf = big ? 6 : 4;
+        for (let i = 0; i < nf; i++) {
+            const a = rand(0, TAU), d = rand(0, rad * 0.35);
+            this.glow('b_fire', x + Math.cos(a) * d, y + 10 + Math.sin(a) * d, Math.cos(a) * 60, Math.sin(a) * 60 + 40, rand(0.25, 0.4), k * rand(0.9, 1.4), k * rand(1.8, 2.6), 255, [255, 255, 255]);
+        }
+        for (let i = 0; i < (big ? 6 : 3); i++) {
+            const a = rand(0, TAU), d = rand(rad * 0.1, rad * 0.5);
+            const p = this.spawnFx('smoke', x + Math.cos(a) * d, y + 10 + Math.sin(a) * d, Math.cos(a) * 50, Math.sin(a) * 30 + rand(40, 80), rand(0.6, 0.9), k * 0.8, k * 1.8, 150, 0, [90, 80, 85]);
+            p.drag = 2;
+        }
+        this.sparks(x, y + 10, 0, 1, Math.PI, big ? 14 : 8, 300 + rad * 2.5, [255, 190, 90]);
+        this.spawnBurst(x, y, col, big ? 10 : 5, 300);
+        // scorch mark
+        if (this.decals.length > 110) { const d = this.decals.shift(); d.pool.put(d.spr); }
+        const sc = new Particle();
+        sc.pool = this.pools.decal;
+        sc.spr = this.pools.decal.get('splat');
+        setTint(sc.spr, 25, 20, 28, 120);
+        sc.spr.node.setPosition(x, y);
+        sc.spr.node.angle = rand(0, 360);
+        sc.spr.node.setScale(k * 1.3, k * 1.0, 1);
+        sc.life = 0; sc.max = 10; sc.a0 = 120;
+        this.decals.push(sc);
     }
 
     spawnBurst(x: number, y: number, col: number[], n: number, speed: number) {
@@ -1421,8 +1641,23 @@ export class World {
         this.spawnFx('puff', x, y + 10, 0, 20, 0.4, r / 25, r / 14, 220, 0, [235, 230, 240]);
     }
 
+    /** Small droplet stain where a gib lands. */
+    spawnDrop(x: number, y: number, col: number[], scale: number) {
+        if (this.decals.length > 85) return;
+        const p = new Particle();
+        p.pool = this.pools.decal;
+        p.spr = this.pools.decal.get('splat');
+        setTint(p.spr, Math.round(col[0] * 0.55), Math.round(col[1] * 0.45), Math.round(col[2] * 0.5), 200);
+        p.spr.node.setPosition(x, y);
+        p.spr.node.angle = rand(0, 360);
+        const s = Math.max(0.12, scale) * rand(0.8, 1.2);
+        p.spr.node.setScale(s, s * 0.75, 1);
+        p.life = 0; p.max = 9; p.a0 = 200;
+        this.decals.push(p);
+    }
+
     spawnDecal(x: number, y: number, col: number[], scale: number) {
-        if (this.decals.length > 70) { const d = this.decals.shift(); d.pool.put(d.spr); }
+        if (this.decals.length > 110) { const d = this.decals.shift(); d.pool.put(d.spr); }
         const p = new Particle();
         p.pool = this.pools.decal;
         p.spr = this.pools.decal.get('splat');
@@ -1432,7 +1667,7 @@ export class World {
         p.spr.node.angle = rand(0, 360);
         const s = scale * rand(0.8, 1.2);
         p.spr.node.setScale(s, s * 0.75, 1);
-        p.life = 0; p.max = 14;
+        p.life = 0; p.max = 14; p.a0 = 200;
         this.decals.push(p);
     }
 
@@ -1444,15 +1679,29 @@ export class World {
             if (t >= 1) { p.pool.put(p.spr); this.particles.splice(i, 1); continue; }
             if (p.drag) { const k = Math.pow(1 / (1 + p.drag), dt * 4); p.vx *= k; p.vy *= k; }
             p.x += p.vx * dt; p.y += p.vy * dt;
-            const s = lerp(p.s0, p.s1, t);
-            p.spr.node.setPosition(p.x, p.y);
+            if (p.grav) {
+                p.vz -= p.grav * dt;
+                p.z += p.vz * dt;
+                if (p.z <= 0) {
+                    p.z = 0;
+                    if (p.bounces < 1 && p.vz < -120) {
+                        p.bounces++; p.vz = -p.vz * 0.35; p.vx *= 0.5; p.vy *= 0.5; p.vr *= 0.5;
+                        if (p.landCol) this.spawnDrop(p.x, p.y, p.landCol, 0.22 * p.s0);
+                    } else { p.vz = 0; p.vx *= 0.8; p.vy *= 0.8; p.vr = 0; }
+                }
+            }
+            if (p.vr) p.spr.node.angle += p.vr * dt;
+            // ease: fast start, slow finish (muzzle flashes, rings)
+            const te = p.ease ? 1 - (1 - t) * (1 - t) : t;
+            const s = lerp(p.s0, p.s1, te);
+            p.spr.node.setPosition(p.x, p.y + p.z);
             p.spr.node.setScale(s * p.sx, s * p.sy, 1);
-            setAlpha(p.spr, lerp(p.a0, p.a1, t));
+            setAlpha(p.spr, p.grav ? (t > 0.75 ? p.a0 * (1 - (t - 0.75) / 0.25) : p.a0) : lerp(p.a0, p.a1, t));
         }
         for (let i = this.decals.length - 1; i >= 0; i--) {
             const d = this.decals[i];
             d.life += dt;
-            if (d.life > d.max - 2) setAlpha(d.spr, 200 * Math.max(0, (d.max - d.life) / 2));
+            if (d.life > d.max - 2) setAlpha(d.spr, d.a0 * Math.max(0, (d.max - d.life) / 2));
             if (d.life >= d.max) { d.pool.put(d.spr); this.decals.splice(i, 1); }
         }
     }
@@ -1498,8 +1747,9 @@ export class World {
             n.t += dt;
             const t = n.t / n.life;
             if (t >= 1) { n.active = false; n.node.active = false; continue; }
-            const pop = t < 0.15 ? 0.6 + t / 0.15 * 0.7 : 1.3 - Math.min(1, (t - 0.15) / 0.2) * 0.3;
-            const s = pop * (n.big ? 1.35 : 0.95);
+            const peak = n.big ? 1.7 : 1.3;
+            const pop = t < 0.12 ? 0.5 + t / 0.12 * (peak - 0.5) : peak - Math.min(1, (t - 0.12) / 0.2) * (peak - 1);
+            const s = pop * (n.big ? 1.3 : 0.92);
             n.node.setScale(s, s, 1);
             n.node.setPosition(n.x, n.y + t * 40);
             if (t > 0.6) {
@@ -1525,8 +1775,10 @@ export class World {
             this.shake = Math.max(0, this.shake - dt * 40);
             this.shakeX = rand(-1, 1) * this.shake; this.shakeY = rand(-1, 1) * this.shake;
         } else { this.shakeX = 0; this.shakeY = 0; }
+        const kd = Math.pow(0.0001, dt);
+        this.kickX *= kd; this.kickY *= kd;
         this.root.setScale(z, z, 1);
-        this.root.setPosition(-cx * z + this.shakeX, -cy * z + this.shakeY);
+        this.root.setPosition(-cx * z + this.shakeX + this.kickX, -cy * z + this.shakeY + this.kickY);
     }
     zoom = 1;
 

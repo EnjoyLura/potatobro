@@ -1,6 +1,6 @@
 # 核芯突围 CORE RUSH
 
-A landscape mobile arena wave-survival shooter (in the same genre as Brotato), built with **Cocos Creator 3.8.8** and exported to **web-mobile**. All art, sound and music are generated in code at runtime, so the project ships with no external image or audio assets.
+A landscape mobile arena wave-survival shooter (in the same genre as Brotato), built with **Cocos Creator 3.8.8** and exported to **web-mobile**. All art and the background music are generated in code at runtime. Sound effects are 46 AI-generated samples (TapTap Maker / Seed Audio) in `build-templates/web-mobile/sfx/`, which the build copies to `sfx/` next to `index.html`.
 
 ## Build (CLI)
 
@@ -41,6 +41,16 @@ python -m http.server 8765 --directory build/web-mobile
 | Danger levels | 6 |
 
 Progress (best wave, wins per character and danger, settings) is saved in localStorage.
+
+## Feel and effects
+
+- **Audio** (`core/Sfx.ts`): samples are fetched and decoded with WebAudio at startup. Each is trimmed of leading silence and loudness-normalized, then played with random pitch, per-sound voice limits and a compressor on the effects bus. Crystal pickups rise in pitch while chained. Kills, explosions and heavy hits get a short sine "thump" underneath for low end. If a file fails to load, that sound falls back to the old synth.
+- **Hits**: enemies flash white, squash, and get an impact star plus directional sparks. Crits add a gold ring, a small shake and a bigger number pop.
+- **Kills**: white silhouette pop, glow ring, outlined gibs that arc, bounce and leave droplet stains, plus a ground splat.
+- **Explosions**: flash, fireballs, shock ring, smoke, embers and a scorch mark.
+- **Guns**: directional muzzle flash, tracers, ejected shell casings, and camera recoil kick on heavy weapons. Melee has thrust streaks and a double slash arc.
+- **Time**: hit-stop when the player is hurt, and hit-stop plus slow-mo on elite and boss kills and on death. A red screen flash plays on taking damage.
+- Glows use a shared additive-blend sprite material (`core/Nodes.ts: additiveMaterial`) on their own layer, so they batch together.
 
 ## Code layout
 
