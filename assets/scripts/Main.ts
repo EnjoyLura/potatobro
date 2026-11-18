@@ -41,7 +41,8 @@ export class Main extends Component implements WorldHost, UIHost {
         input.on(Input.EventType.KEY_DOWN, this.onKey, this);
         input.on(Input.EventType.KEY_UP, this.onKeyUp, this);
         view.on('canvas-resize', this.onResize, this);
-        game.on(Game.EVENT_HIDE, () => { if (this.state === 'play') this.pause(); });
+        game.on(Game.EVENT_HIDE, () => { if (this.state === 'play') this.pause(); Sfx.suspend(); });
+        game.on(Game.EVENT_SHOW, () => Sfx.resume());
         Sfx.load();
         Sfx.startMusic();
         this.ui.showMenu();
@@ -201,13 +202,16 @@ export class Main extends Component implements WorldHost, UIHost {
     pause() {
         if (this.state !== 'play') return;
         this.state = 'pause';
+        this.musicBeforePause = Sfx.intensity;
+        Sfx.intensity = 0;
         this.ui.resetJoystick();
         this.ui.showPause();
     }
 
     resume() {
-        if (this.state === 'pause') this.state = 'play';
+        if (this.state === 'pause') { this.state = 'play'; Sfx.intensity = this.musicBeforePause || 1; }
     }
+    private musicBeforePause = 1;
 
     quitToMenu() {
         if (this.runObj && !this.recorded && this.state !== 'menu') this.record(false);

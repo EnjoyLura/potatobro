@@ -1,6 +1,6 @@
 # 核芯突围 CORE RUSH
 
-A landscape mobile arena wave-survival shooter (in the same genre as Brotato), built with **Cocos Creator 3.8.8** and exported to **web-mobile**. All art and the background music are generated in code at runtime. Sound effects are 46 AI-generated samples (TapTap Maker / Seed Audio) in `build-templates/web-mobile/sfx/`, which the build copies to `sfx/` next to `index.html`.
+A landscape mobile arena wave-survival shooter (in the same genre as Brotato), built with **Cocos Creator 3.8.8** and exported to **web-mobile**. All art is generated in code at runtime. Audio is AI-generated with TapTap Maker: 46 sound effects in `build-templates/web-mobile/sfx/` and a battle BGM in `build-templates/web-mobile/bgm/battle.mp3`. The build copies both folders next to `index.html`.
 
 ## Build (CLI)
 
@@ -19,6 +19,23 @@ Output goes to `build/web-mobile/` (about 2 MB). Exit code `36` means success. T
 ```bat
 python -m http.server 8765 --directory build/web-mobile
 ```
+
+## Sound lab
+
+```bat
+tools\sound-lab.bat
+```
+
+This opens http://127.0.0.1:8766/tools/sound-lab.html, a page for reviewing and mixing every sound and the BGM:
+
+- Each sound plays with the game's processing. You can also play each variant raw, with its waveform.
+- Mark each file pass or fail and add a note. "复制不及格清单" copies the failed files and their notes to the clipboard so they can be regenerated.
+- Per-sound sliders: volume, pitch variation, max length, minimum gap, max simultaneous plays, and how much it ducks the combat buses.
+- Per-bus volume, voice cap and busy threshold, with live meters.
+- BGM preview in battle, boss and menu (muffled) modes.
+- A battle simulator fires up to six chosen weapons with hits, kills and pickups using the game's mixing rules, so you can hear how loud a full loadout gets.
+
+"保存配置" (or Ctrl+S) writes `build-templates/web-mobile/sfx/config.json`, plus `build/web-mobile/sfx/config.json` if a build exists. The game reads this file at startup. Failed variants are skipped in game whenever the sound has another variant.
 
 ## Gameplay
 
@@ -44,7 +61,12 @@ Progress (best wave, wins per character and danger, settings) is saved in localS
 
 ## Feel and effects
 
-- **Audio** (`core/Sfx.ts`): samples are fetched and decoded with WebAudio at startup. Each is trimmed of leading silence and loudness-normalized, then played with random pitch, per-sound voice limits and a compressor on the effects bus. Crystal pickups rise in pitch while chained. Kills, explosions and heavy hits get a short sine "thump" underneath for low end. If a file fails to load, that sound falls back to the old synth.
+- **Audio** (`core/Sfx.ts`): settings come from `sfx/config.json`. Samples are decoded with WebAudio, trimmed of leading silence, loudness-normalized and played with random pitch.
+  - Every sound goes through a bus (weapon, impact, kill, boom, enemy, pickup, player, event, ui). A bus caps how many sounds overlap and turns itself down once more than `busyAt` sounds hit within about 0.35 s, so a full loadout stays readable.
+  - Hurt, level-up, elite and wave-end sounds briefly duck the combat buses.
+  - Crystal pickups rise in pitch while chained.
+  - The BGM streams through an `<audio>` element instead of being decoded into memory. It is muffled with a low-pass filter in the menu, shop and pause screens.
+  - If a file fails to load, that sound falls back to the old synth.
 - **Hits**: enemies flash white, squash, and get an impact star plus directional sparks. Crits add a gold ring, a small shake and a bigger number pop.
 - **Kills**: white silhouette pop, glow ring, outlined gibs that arc, bounce and leave droplet stains, plus a ground splat.
 - **Explosions**: flash, fireballs, shock ring, smoke, embers and a scorch mark.

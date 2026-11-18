@@ -4,8 +4,23 @@
     {
       "name": "web-mobile",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8765", "--directory", "build/web-mobile"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8765",
+        "--directory",
+        "build/web-mobile"
+      ],
       "port": 8765
+    },
+    {
+      "name": "sound-lab",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "tools/sound_lab.py",
+        "--no-browser"
+      ],
+      "port": 8766
     }
   ]
 }
