@@ -8,17 +8,35 @@ A landscape mobile arena wave-survival shooter (in the same genre as Brotato), b
 build.bat
 ```
 
-This is the same as:
+`build.bat` runs the Cocos Creator CLI build (`build-web.json`, exit code `36` means success) and then `tools/postbuild.py`, which patches the output:
 
-```bat
-"C:\ProgramData\cocos\editors\Creator\3.8.8\CocosCreator.exe" --project D:/AI/potato --build "configPath=D:/AI/potato/build-web.json"
-```
+- **Sharp rendering on phones.** Cocos 3.8 caps devicePixelRatio at 2, so 3x phones render at 2/3 resolution and look blurry. The patch makes the engine read `window.__CR_DPR_CAP()` from the page template instead. That function returns the real ratio up to 3; add `?dpr=2` (or `1`) to the URL to save battery.
+- **No Cocos splash.** `splashScreen.totalTime` is set to 0. The page shows its own "加载中" text while loading.
+- **Cache-busting.** The entry script gets `?v=<time>`, so returning visitors load the new build.
 
-Output goes to `build/web-mobile/` (about 2 MB). Exit code `36` means success. To try it locally:
+Output goes to `build/web-mobile/` (about 6 MB). To try it locally:
 
 ```bat
 python -m http.server 8765 --directory build/web-mobile
 ```
+
+## Deploy (GitHub Pages)
+
+```bat
+build.bat
+python tools/deploy_pages.py
+```
+
+`deploy_pages.py` force-pushes `build/web-mobile` as a single commit to the `gh-pages` branch, so old builds don't pile up in history. GitHub Pages serves that branch (Settings > Pages > Deploy from a branch > `gh-pages`, `/ (root)`) at https://enjoylura.github.io/potatobro/.
+
+## Screen adaptation
+
+- **Landscape layout.** Design height is fixed at 720 and the width follows the screen: 16:9 gives 1280, 19.5:9 gives 1560. Outside 4:3 to 2.4:1 (an iPad held upright, desktop windows, ultra-wide monitors) the game letterboxes, so layouts never get narrower than 960 or wider than 1728.
+- **Phones held upright.** The engine rotates the game 90°, so players just turn the phone. Touch input follows the rotation.
+- **Notches and home indicator.** `viewport-fit=cover` lets the game fill the screen. The UI reads `env(safe-area-inset-*)` (mapped to the rotated edges when rotated) and keeps the HUD and buttons inside the safe area.
+- **Small screens.** The UI scales up 1.15–1.3× when the game area is under 640 / 480 CSS px tall. Screens are rebuilt after a resize or rotation.
+- **Shop.** The inventory (weapons, set bonuses, item rows) is measured first and the cards get the remaining height. Card text shrinks to stay above the price buttons, and extra items collapse into a "+N" cell.
+- **Fullscreen.** The main menu has a 全屏 button where the browser supports it (Android, desktop). It also tries to lock landscape.
 
 ## Sound lab
 

@@ -63,15 +63,26 @@ export class UI {
     }
 
     scale = 1;
+    /** Safe-area insets (notch, home indicator) in UI units, already applied to W/H and the root position. */
+    safe = { l: 0, r: 0, t: 0, b: 0 };
     updateSize() {
         const v = this.host.viewSize();
         // enlarge the UI on small (phone) screens so text stays readable
         const ws = screen.windowSize;
         const dpr = screen.devicePixelRatio || 1;
-        const cssH = Math.min(ws.width, ws.height) / dpr;
+        const winW = ws.width / dpr, winH = ws.height / dpr;
+        // CSS size of the drawn game area (smaller than the window when letterboxed)
+        const cssH = Math.min(winH, winW * v.h / v.w), cssW = cssH * v.w / v.h;
         this.scale = cssH < 480 ? 1.3 : cssH < 640 ? 1.15 : 1;
         this.root.setScale(this.scale, this.scale, 1);
-        this.W = v.w / this.scale; this.H = v.h / this.scale;
+        // keep HUD and buttons out of the notch / rounded corners / home indicator
+        const ins = safeInsetsCss(winW, winH);
+        const k = v.h / cssH / this.scale; // UI units per CSS pixel
+        const side = Math.max(ins.l, ins.r) * k; // symmetric, so screens stay centered
+        const sf = this.safe = { l: side, r: side, t: ins.t * k, b: ins.b * k };
+        this.W = v.w / this.scale - sf.l - sf.r;
+        this.H = v.h / this.scale - sf.t - sf.b;
+        this.root.setPosition((sf.l - sf.r) / 2 * this.scale, (sf.b - sf.t) / 2 * this.scale, 0);
     }
 
     get L() { return -this.W / 2; }
@@ -197,6 +208,18 @@ export class UI {
         st.node.setPosition(0, this.B + 22);
         const hint = label(s, '移动：在屏幕任意处拖动  ·  武器自动瞄准射击', 20, COL.dim, { outline: 3 });
         hint.node.setPosition(0, this.B + 220);
+        // fullscreen (Android / desktop browsers; iPhone Safari has no fullscreen API)
+        if (screen.supportsFullScreen) {
+            const fb = button(s, 120, 50, screen.fullScreen() ? '退出全屏' : '全屏', COL.btnDark, () => {
+                if (screen.fullScreen()) screen.exitFullScreen().catch(() => { });
+                else screen.requestFullScreen().then(() => {
+                    // phones: also try to hold landscape while fullscreen
+                    const so: any = (window as any).screen && (window as any).screen.orientation;
+                    if (so && so.lock) so.lock('landscape').catch(() => { });
+                }).catch(() => { });
+            }, 20);
+            fb.node.setPosition(this.R - 76, this.T - 40);
+        }
     }
 
     // ================================================================ character select
@@ -343,7 +366,8 @@ export class UI {
         this.hud = h;
         this.lastHud = {};
         // vignette
-        this.vignette = mkSprite(h, 'vignette', this.W + 40, this.H + 40);
+        this.vignette = mkSprite(h, 'vignette', this.W + this.safe.l + this.safe.r + 40, this.H + this.safe.t + this.safe.b + 40);
+        this.vignette.node.setPosition((this.safe.r - this.safe.l) / 2, (this.safe.t - this.safe.b) / 2);
         setTint(this.vignette, 200, 0, 20, 0);
         // joystick
         this.joyBase = mkSprite(h, 'joy_base');
@@ -463,7 +487,7 @@ export class UI {
     }
 
     /** Generic card used by shop / crates / level up. */
-    card(parent: Node, w: number, h: number, tier: number, iconFrame: string, iconTint: string | null, title: string, sub: string, lines: Line[], isWeapon: boolean): Node {
+    card(parent: Node, w: number, h: number, tier: number, iconFrame: string, iconTint: string | null, title: string, sub: string, lines: Line[], isWeapon: boolean, reserve = 8): Node {
         const n = mkNode('card', parent);
         size(n, w, h);
         const sh = mkNode('sh', n); const sg = sh.addComponent(Graphics); drawRR(sg, w, h, '#000000', undefined, 16, 0, 100); sh.setPosition(0, -6);
@@ -483,13 +507,22 @@ export class UI {
         sl.node.setPosition(-w / 2 + 72, ty);
         sl.updateRenderData(true);
         ty -= sl.node.getComponent(UITransform).height;
-        let y = Math.min(h / 2 - 72, ty - 6);
-        const fs = w < 190 ? 14 : 15;
-        for (const ln of lines) {
-            const l = label(n, ln.t, fs, ln.c, { align: 'left', width: w - 20, outline: 2, lineH: fs + 4, anchorY: 1 });
-            l.node.setPosition(-w / 2 + 10, y);
-            l.updateRenderData(true);
-            y -= l.node.getComponent(UITransform).height + 2;
+        const y0 = Math.min(h / 2 - 72, ty - 6);
+        const bottom = -h / 2 + reserve;
+        // stat lines: normal size if they fit above the bottom reserve (buttons), otherwise shrink
+        const base = w < 190 ? 14 : 15;
+        for (let fs = base; fs >= 10; fs--) {
+            const box = mkNode('lines', n);
+            let y = y0;
+            const gap = fs >= 13 ? 2 : 1;
+            for (const ln of lines) {
+                const l = label(box, ln.t, fs, ln.c, { align: 'left', width: w - 20, outline: fs >= 13 ? 2 : 1, lineH: fs + (fs >= 13 ? 4 : 3), anchorY: 1 });
+                l.node.setPosition(-w / 2 + 10, y);
+                l.updateRenderData(true);
+                y -= l.node.getComponent(UITransform).height + gap;
+            }
+            if (y >= bottom - 1 || fs === 10) break;
+            box.removeFromParent(); box.destroy();
         }
         return n;
     }
@@ -657,7 +690,33 @@ export class UI {
             sp.setPosition(this.R - statW / 2 - 15, 45);
         };
         const refreshMats = () => { matL.string = '' + run.mats; };
-        const cw = Math.min(250, (areaW - 3 * 14) / 4), ch = Math.min(400, this.H - 262);
+        const cw = Math.min(250, (areaW - 3 * 14) / 4);
+        // Inventory (weapons, set bonuses, items) is measured first; the cards get the remaining height.
+        const ws = 58, wsGap = 8;
+        const bx = areaL + MAX_WEAPONS * (ws + wsGap) + 14;
+        const bonusW = Math.max(120, areaL + invW - bx);
+        let ch = 0, isz = 40, perRow = 1, rows = 1, weaponBand = 92, bonusTxt: string[] = [];
+        const layout = () => {
+            const counts = run.classCounts();
+            bonusTxt = [];
+            for (const k in counts) if (counts[k] >= 2) {
+                const cls = WEAPON_CLASSES[k];
+                const mods = cls.bonus[Math.min(6, counts[k]) - 2];
+                bonusTxt.push(`${cls.name}×${counts[k]}: ` + Object.keys(mods).map(m => modText(m, (mods as any)[m])).join(' '));
+            }
+            // rough wrap estimate (15px glyphs) so the item section starts below the bonus text
+            const lineCount = (t: string) => Math.max(1, Math.ceil(t.length * 15 / bonusW));
+            const bonusLines = bonusTxt.length ? 1 + bonusTxt.reduce((a, t) => a + lineCount(t), 0) : lineCount('同类武器≥2把时获得套装加成');
+            weaponBand = Math.max(92, bonusLines * 19 + 10);
+            const n = run.itemOrder.length;
+            isz = n > 2 * Math.floor(invW / 44) ? 34 : 40;
+            perRow = Math.max(1, Math.floor(invW / (isz + 4)));
+            const want = Math.max(1, Math.ceil(n / perRow));
+            const room = (r: number) => this.H - 66 - 12 - (weaponBand + 28 + r * (isz + 4)) - 8;
+            rows = want;
+            while (rows > 1 && room(rows) < 230) rows--; // keep the cards readable; extra items collapse into "+N"
+            ch = Math.max(180, Math.min(400, room(rows)));
+        };
         const buildCards = () => {
             clearChildren(cards);
             run.shop.forEach((slot, i) => {
@@ -672,7 +731,7 @@ export class UI {
                 let n: Node;
                 if (slot.kind === 'weapon') {
                     const def = WEAPON_MAP[slot.id];
-                    n = this.card(cards, cw, ch, slot.tier, def.sprite, null, def.name + ' ' + TIER_NAMES[slot.tier - 1], '武器 · ' + classText(def), weaponLines(def, slot.tier, run.stats), true);
+                    n = this.card(cards, cw, ch, slot.tier, def.sprite, null, def.name + ' ' + TIER_NAMES[slot.tier - 1], '武器 · ' + classText(def), weaponLines(def, slot.tier, run.stats), true, run.canEquip(def) ? 64 : 92);
                     if (!run.canEquip(def)) {
                         const nl = label(n, '无法装备', 18, COL.bad);
                         nl.node.setPosition(0, -ch / 2 + 76);
@@ -680,7 +739,7 @@ export class UI {
                 } else {
                     const it = ITEM_MAP[slot.id];
                     const cnt = run.itemCount(it.id);
-                    n = this.card(cards, cw, ch, it.tier, 'g_' + it.glyph, it.color, it.name, '物品' + (cnt ? `（已有 ${cnt}）` : ''), itemLines(it), false);
+                    n = this.card(cards, cw, ch, it.tier, 'g_' + it.glyph, it.color, it.name, '物品' + (cnt ? `（已有 ${cnt}）` : ''), itemLines(it), false, 64);
                 }
                 n.setPosition(x, y);
                 const afford = run.mats >= slot.price;
@@ -708,44 +767,54 @@ export class UI {
         };
         const buildInv = () => {
             clearChildren(inv);
-            const y0 = this.T - 66 - ch - 16;
+            const y0 = this.T - 66 - ch - 12; // top of the inventory block
             const wl = label(inv, `武器 (${run.weapons.length}/${MAX_WEAPONS})`, 20, COL.text, { align: 'left' });
-            wl.node.setPosition(areaL + 4, y0);
-            const ws = 58;
+            wl.node.setPosition(areaL + 4, y0 - 10);
             run.weapons.forEach((w, i) => {
                 const c = this.weaponCell(inv, w, ws);
-                c.setPosition(areaL + ws / 2 + i * (ws + 8), y0 - 38);
+                c.setPosition(areaL + ws / 2 + i * (ws + wsGap), y0 - 24 - ws / 2);
                 if (run.canCombine(i)) {
                     const pl = label(c, '+', 22, COL.good, { outline: 3 });
                     pl.node.setPosition(-ws / 2 + 10, ws / 2 - 12);
                 }
                 tappable(c, () => this.weaponPopup(i, refreshAll));
             });
-            // class bonuses
-            const counts = run.classCounts();
-            const bonusTxt: string[] = [];
-            for (const k in counts) if (counts[k] >= 2) {
-                const cls = WEAPON_CLASSES[k];
-                const mods = cls.bonus[Math.min(6, counts[k]) - 2];
-                bonusTxt.push(`${cls.name}×${counts[k]}: ` + Object.keys(mods).map(m => modText(m, (mods as any)[m])).join(' '));
-            }
-            const bx = areaL + 6 * (ws + 8) + 14;
-            const bl = label(inv, bonusTxt.length ? '套装加成\n' + bonusTxt.join('\n') : '同类武器≥2把时获得套装加成', 15, bonusTxt.length ? COL.good : COL.dim, { align: 'left', width: Math.max(120, areaL + invW - bx), outline: 2, anchorY: 1, lineH: 19 });
-            bl.node.setPosition(bx, y0 + 10);
+            // class bonuses, right of the weapon slots
+            const bl = label(inv, bonusTxt.length ? '套装加成\n' + bonusTxt.join('\n') : '同类武器≥2把时获得套装加成', 15, bonusTxt.length ? COL.good : COL.dim, { align: 'left', width: bonusW, outline: 2, anchorY: 1, lineH: 19 });
+            bl.node.setPosition(bx, y0 - 2);
+            // items
+            const iy = y0 - weaponBand;
             const il = label(inv, `物品 (${run.itemOrder.length})`, 20, COL.text, { align: 'left' });
-            il.node.setPosition(areaL + 4, y0 - 80);
-            const is = 40;
-            const perRow = Math.max(1, Math.floor(invW / (is + 4)));
-            run.itemOrder.forEach((id, i) => {
+            il.node.setPosition(areaL + 4, iy - 10);
+            const cap = rows * perRow;
+            const n = run.itemOrder.length;
+            const shown = n > cap ? cap - 1 : n;
+            const cellPos = (i: number) => [areaL + isz / 2 + (i % perRow) * (isz + 4), iy - 26 - isz / 2 - Math.floor(i / perRow) * (isz + 4)];
+            run.itemOrder.slice(0, shown).forEach((id, i) => {
                 const it = ITEM_MAP[id];
-                const c = this.itemCell(inv, it, run.items[id], is);
-                c.setPosition(areaL + is / 2 + (i % perRow) * (is + 4), y0 - 108 - Math.floor(i / perRow) * (is + 4));
+                const c = this.itemCell(inv, it, run.items[id], isz);
+                const [cx, cy] = cellPos(i);
+                c.setPosition(cx, cy);
                 tappable(c, () => this.infoPopup((p, w, h) => {
                     const cc = this.card(p, w - 20, h - 20, it.tier, 'g_' + it.glyph, it.color, it.name + (run.items[id] > 1 ? ` x${run.items[id]}` : ''), '物品', itemLines(it), false);
                 }, 320, 320));
             });
+            if (n > shown) {
+                // too many to show: the last cell lists every item
+                const more = mkNode('more', inv); size(more, isz, isz);
+                const mg = more.addComponent(Graphics); drawRR(mg, isz, isz, '#2b2434', COL.stroke, 9, 3);
+                label(more, '+' + (n - shown), 15, COL.text, { outline: 2 });
+                const [cx, cy] = cellPos(shown);
+                more.setPosition(cx, cy);
+                tappable(more, () => this.infoPopup((p, w, h) => {
+                    const list = run.itemOrder.map(id => ITEM_MAP[id].name + (run.items[id] > 1 ? ' x' + run.items[id] : '')).join('、');
+                    label(p, '全部物品', 24, COL.gold, { outline: 3 }).node.setPosition(0, h / 2 - 30);
+                    const t = label(p, list, 16, COL.text, { width: w - 40, outline: 2, anchorY: 1, lineH: 22 });
+                    t.node.setPosition(0, h / 2 - 56);
+                }, 560, Math.min(420, this.H - 40)));
+            }
         };
-        const refreshAll = () => { refreshMats(); buildCards(); buildInv(); refreshStats(); };
+        const refreshAll = () => { layout(); refreshMats(); buildCards(); buildInv(); refreshStats(); };
         refreshAll();
         if (narrow) {
             const go = button(s, 260, 62, `出发 → 第 ${run.wave + 1} 波`, COL.btn, () => this.host.nextWave(), 26);
@@ -906,4 +975,23 @@ export class UI {
         const m = button(s, 240, 66, '主菜单', COL.btnDark, () => this.host.quitToMenu(), 28);
         m.node.setPosition(win && !run.endless ? 290 : 140, this.B + 60);
     }
+}
+
+/**
+ * Safe-area insets in CSS pixels, in game orientation. The page sets --safe-* from env(safe-area-inset-*)
+ * (needs viewport-fit=cover). When the engine rotates the game to landscape on a portrait phone, the
+ * device's top edge becomes the game's left edge, right becomes top, bottom becomes right, left becomes bottom.
+ */
+function safeInsetsCss(gameW: number, gameH: number) {
+    const out = { l: 0, r: 0, t: 0, b: 0 };
+    if (typeof window === 'undefined' || typeof document === 'undefined') return out;
+    try {
+        const cs = getComputedStyle(document.documentElement);
+        const px = (n: string) => parseFloat(cs.getPropertyValue(n)) || 0;
+        const t = px('--safe-top'), r = px('--safe-right'), b = px('--safe-bottom'), l = px('--safe-left');
+        const rotated = (window.innerWidth > window.innerHeight) !== (gameW > gameH);
+        if (rotated) { out.l = t; out.t = r; out.r = b; out.b = l; }
+        else { out.l = l; out.r = r; out.t = t; out.b = b; }
+    } catch (e) { /* no CSS env support */ }
+    return out;
 }

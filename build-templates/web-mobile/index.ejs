@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+
+  <title>核芯突围 CORE RUSH</title>
+
+  <!-- viewport-fit=cover: draw under the notch; the game insets its UI with the safe-area values below -->
+  <meta name="viewport"
+        content="width=device-width,user-scalable=no,initial-scale=1,minimum-scale=1,maximum-scale=1,minimal-ui=true,viewport-fit=cover"/>
+  <meta name="description" content="核芯突围 CORE RUSH：横屏竞技场波次生存射击游戏">
+  <meta name="theme-color" content="#17131c">
+
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="核芯突围">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="screen-orientation" content="landscape">
+  <meta name="x5-orientation" content="landscape">
+
+  <meta name="renderer" content="webkit"/>
+  <meta name="force-rendering" content="webkit"/>
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+  <meta name="msapplication-tap-highlight" content="no">
+
+  <meta name="full-screen" content="yes"/>
+  <meta name="x5-fullscreen" content="true"/>
+  <meta name="360-fullscreen" content="true"/>
+  <meta name="x5-page-mode" content="app">
+
+  <link rel="stylesheet" type="text/css" href="<%= cssUrl %>"/>
+
+  <!-- Sharp canvas on phones: the engine's devicePixelRatio cap (2) is patched by tools/postbuild.py
+       to read this function. Real ratio up to 3 (3x phones render at native resolution); desktop page
+       zoom-out is compensated so the buffer does not explode; ?dpr=2 (or 1) in the URL saves battery. -->
+  <script>
+    (function () {
+      var q = 0;
+      try { q = parseFloat(new URLSearchParams(location.search).get('dpr')) || 0; } catch (e) { }
+      window.__CR_DPR_CAP = function () {
+        var real = window.devicePixelRatio || 1;
+        var zoom = (window.visualViewport && window.visualViewport.scale) || 1;
+        var cap = q > 0 ? Math.min(real, q) : Math.min(real, 3) * Math.min(1, zoom);
+        return Math.max(0.5, cap);
+      };
+    })();
+  </script>
+
+</head>
+<body>
+  <div id="GameDiv" cc_exact_fit_screen="true">
+      <div id="Cocos3dGameContainer">
+        <canvas id="GameCanvas" oncontextmenu="event.preventDefault()" tabindex="99"></canvas>
+      </div>
+    </div>
+  <!-- removed by the game once it starts (Main.onLoad) -->
+  <div id="boot">核芯突围 · 加载中…</div>
+  <%- include(cocosTemplate, {}) %>
+</body>
+</html>

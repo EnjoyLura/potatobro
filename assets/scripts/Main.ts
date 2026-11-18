@@ -1,5 +1,5 @@
 // Entry component (attached to the Canvas in main.scene). Owns the World, the UI and the game state machine.
-import { _decorator, Component, view, ResolutionPolicy, input, Input, EventKeyboard, KeyCode, game, Game } from 'cc';
+import { _decorator, Component, view, ResolutionPolicy, input, Input, EventKeyboard, KeyCode, game, Game, screen } from 'cc';
 import { Atlas } from './core/Atlas';
 import { registerArt } from './core/Art';
 import { Sfx } from './core/Sfx';
@@ -26,7 +26,7 @@ export class Main extends Component implements WorldHost, UIHost {
     recorded = false;
 
     onLoad() {
-        view.setDesignResolutionSize(1280, 720, ResolutionPolicy.FIXED_HEIGHT);
+        this.applyResolution();
         Save.load();
         Sfx.setSfx(Save.data.sfx);
         Sfx.setMusic(Save.data.music);
@@ -46,6 +46,25 @@ export class Main extends Component implements WorldHost, UIHost {
         Sfx.load();
         Sfx.startMusic();
         this.ui.showMenu();
+        if (typeof document !== 'undefined') { const b = document.getElementById('boot'); if (b) b.remove(); }
+    }
+
+    private resKey = '';
+    /**
+     * Height is fixed at 720 design units and the width follows the screen (16:9 -> 1280, 19.5:9 -> 1560).
+     * Outside 4:3 .. 2.4:1 (iPad portrait, desktop windows, ultra-wide monitors) the game letterboxes
+     * instead, so layouts never get narrower than 960 or wider than 1728.
+     */
+    applyResolution() {
+        const ws = screen.windowSize;
+        const ar = ws.width / Math.max(1, ws.height);
+        let w = 1280, policy = ResolutionPolicy.FIXED_HEIGHT;
+        if (ar < 4 / 3 - 0.01) { w = 960; policy = ResolutionPolicy.SHOW_ALL; }
+        else if (ar > 2.4) { w = 1728; policy = ResolutionPolicy.SHOW_ALL; }
+        const key = w + ':' + policy;
+        if (key === this.resKey) return;
+        this.resKey = key;
+        view.setDesignResolutionSize(w, 720, policy);
     }
 
     onDestroy() {
@@ -54,6 +73,7 @@ export class Main extends Component implements WorldHost, UIHost {
     }
 
     onResize() {
+        this.applyResolution();
         this.ui.updateSize();
         this.world.zoom = this.ui.scale > 1.2 ? 1.15 : this.ui.scale > 1 ? 1.07 : 1;
         // rebuild the current screen so it fits the new aspect ratio
@@ -62,6 +82,7 @@ export class Main extends Component implements WorldHost, UIHost {
             case 'play': this.ui.buildHud(); break;
             case 'pause': this.ui.buildHud(); this.ui.showPause(); break;
             case 'shop': this.ui.showShop(); break;
+            case 'over': if (this.runObj) this.ui.showResult(!!this.runObj.won); break;
         }
     }
 
