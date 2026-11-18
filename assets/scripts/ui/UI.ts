@@ -6,7 +6,11 @@ import { Sfx } from '../core/Sfx';
 import { Save } from '../core/Save';
 import {
     COL, C, panel, shadowPanel, label, button, Btn, blocker, bar, Bar, icon, iconFit, popIn, clearChildren, size, opacity, tappable, tapSound, drawRR,
+    pill, slider, toggle,
 } from './UIKit';
+
+/** Shown on the main menu and settings screen; bump with each release (see changelogPopup). */
+export const VERSION = 'V1.3';
 import { itemLines, weaponLines, classText, tierColor, statValueText, Line } from './Text';
 import { CHARACTERS, CharDef } from '../data/Characters';
 import { WEAPON_MAP, WEAPON_CLASSES, TIER_NAMES, TIER_BG, TIER_COLORS, WeaponDef } from '../data/Weapons';
@@ -149,33 +153,46 @@ export class UI {
     }
 
     // ================================================================ main menu
+    /** True while the settings screen opened from the main menu is showing (rebuilt on resize). */
+    inSettings = false;
+
+    /**
+     * Main menu: title and a stack of pill buttons in a left column, art on the right,
+     * secondary pills along the top right, records at the bottom right.
+     */
     showMenu() {
+        this.inSettings = false;
         this.updateSize();
         this.clearScreen();
         this.hideHud();
         const s = this.screen;
-        // backdrop
+        const H = this.H, hk = Math.min(1, H / 720);
+        // backdrop: darker on the left behind the buttons
         const bg = mkNode('bg', s);
         const g = bg.addComponent(Graphics);
-        g.fillColor = C('#0f0b12', 150); g.rect(-this.W, -this.H, this.W * 2, this.H * 2); g.fill();
-        // decorative characters
+        g.fillColor = C('#0f0b12', 110); g.rect(-this.W, -this.H, this.W * 2, this.H * 2); g.fill();
+        const colW = Math.min(440, this.W * 0.4);
+        const colX = this.L + 30 + colW / 2;
+        g.fillColor = C('#0f0b12', 70); g.rect(-this.W, -this.H, this.W + this.L + colW + 60, this.H * 2); g.fill();
+
+        // right half: hero with weapons, enemies around it
+        const artL = this.L + colW + 60, artCX = (artL + this.R) / 2, artCY = -H * 0.04;
         const deco = mkNode('deco', s);
         const enemies = ['e_grub', 'e_runner', 'e_spitter', 'e_charger', 'e_brute', 'e_splitter', 'e_hatcher', 'e_bomber'];
-        for (let i = 0; i < 14; i++) {
+        const rx = (this.R - artL) * 0.42, ry = H * 0.34;
+        for (let i = 0; i < 12; i++) {
             const sp = mkSprite(deco, enemies[i % enemies.length]);
-            const a = i / 14 * Math.PI * 2;
-            const x = Math.cos(a) * (this.W * 0.42), y = Math.sin(a) * 250 - 30;
+            const a = i / 12 * Math.PI * 2 + 0.3;
+            const x = artCX + Math.cos(a) * rx, y = artCY + Math.sin(a) * ry;
             sp.node.setPosition(x, y);
-            const sc = 0.9 + (i % 3) * 0.2;
-            sp.node.setScale(x > 0 ? sc : -sc, sc, 1);
+            const sc = (0.85 + (i % 3) * 0.2) * Math.max(0.8, hk);
+            sp.node.setScale(x > artCX ? -sc : sc, sc, 1);
             tween(sp.node).repeatForever(tween().by(0.6 + (i % 4) * 0.15, { position: new Vec3(0, 8, 0) }).by(0.6 + (i % 4) * 0.15, { position: new Vec3(0, -8, 0) })).start();
         }
-        const H = this.H;
-        const hk = Math.min(1, H / 720);
-        const heroY = this.T - H * 0.47;
         const heroNode = mkNode('heroGroup', s);
-        heroNode.setPosition(0, heroY);
-        heroNode.setScale(hk, hk, 1);
+        heroNode.setPosition(artCX, artCY);
+        const hs = Math.max(0.8, hk) * 1.25;
+        heroNode.setScale(hs, hs, 1);
         const hero = mkSprite(heroNode, 'c_unit', 72 * 2.2, 78 * 2.2);
         tween(hero.node).repeatForever(tween().to(0.5, { scale: new Vec3(1.04, 0.96, 1) }).to(0.5, { scale: new Vec3(0.97, 1.03, 1) })).start();
         for (let i = 0; i < 3; i++) {
@@ -186,40 +203,158 @@ export class UI {
             w.node.angle = [20, 160, -15][i];
             if (i === 1) w.node.setScale(1.6, -1.6, 1);
         }
-        const title = label(s, '核芯突围', Math.round(92 * Math.max(0.8, hk)), '#ffd166', { outline: 8 });
-        title.node.setPosition(0, this.T - H * 0.14);
-        const sub = label(s, 'CORE  RUSH  ·  外星虫潮生存战', 26, COL.text, { outline: 4 });
-        sub.node.setPosition(0, this.T - H * 0.14 - 62);
+
+        // left column: title, buttons, version
+        const titleY = this.T - H * 0.2;
+        const title = label(s, '核芯突围', Math.round(96 * Math.max(0.75, hk)), '#ffd166', { outline: 9 });
+        title.node.setPosition(colX, titleY);
         popIn(title.node);
-        const start = button(s, 300, 80, '开始游戏', COL.btn, () => this.showCharSelect(), 38);
-        start.node.setPosition(0, this.B + 160);
-        tween(start.node).repeatForever(tween().to(0.7, { scale: new Vec3(1.05, 1.05, 1) }).to(0.7, { scale: new Vec3(1, 1, 1) })).start();
-        // settings
-        const mk = (txt: string, get: () => boolean, set: (v: boolean) => void, x: number) => {
-            const b = button(s, 150, 54, '', COL.btnDark, () => { set(!get()); Save.save(); upd(); }, 22);
-            const upd = () => { b.setText(txt + (get() ? ' 开' : ' 关')); b.setColor(get() ? '#4f8a5b' : COL.btnDark); };
-            upd();
-            b.node.setPosition(x, this.B + 70);
-        };
-        mk('音效', () => Save.data.sfx, v => { Save.data.sfx = v; Sfx.setSfx(v); }, -170);
-        mk('音乐', () => Save.data.music, v => { Save.data.music = v; Sfx.setMusic(v); }, 0);
-        mk('震屏', () => Save.data.shake, v => { Save.data.shake = v; }, 170);
-        const st = label(s, `最高波次 ${Save.data.bestWave}   ·   总局数 ${Save.data.runs}   ·   总击杀 ${Save.data.kills}`, 20, COL.dim, { outline: 3 });
-        st.node.setPosition(0, this.B + 22);
-        const hint = label(s, '移动：在屏幕任意处拖动  ·  武器自动瞄准射击', 20, COL.dim, { outline: 3 });
-        hint.node.setPosition(0, this.B + 220);
-        // fullscreen (Android / desktop browsers; iPhone Safari has no fullscreen API)
+        const sub = label(s, 'CORE  RUSH  ·  外星虫潮生存战', Math.round(24 * Math.max(0.85, hk)), COL.text, { outline: 4 });
+        sub.node.setPosition(colX, titleY - Math.round(70 * Math.max(0.75, hk)));
+        const bw = Math.min(400, colW - 10), bh = Math.round(Math.max(54, Math.min(76, H * 0.11)));
+        const gap = Math.round(bh * 0.24);
+        const items: [string, () => void, string][] = [
+            ['开始游戏', () => this.showCharSelect(), COL.gold],
+            ['设置', () => this.showSettings(false), '#ffffff'],
+        ];
         if (screen.supportsFullScreen) {
-            const fb = button(s, 120, 50, screen.fullScreen() ? '退出全屏' : '全屏', COL.btnDark, () => {
+            items.push([screen.fullScreen() ? '退出全屏' : '全屏', () => {
                 if (screen.fullScreen()) screen.exitFullScreen().catch(() => { });
                 else screen.requestFullScreen().then(() => {
                     // phones: also try to hold landscape while fullscreen
                     const so: any = (window as any).screen && (window as any).screen.orientation;
                     if (so && so.lock) so.lock('landscape').catch(() => { });
                 }).catch(() => { });
-            }, 20);
-            fb.node.setPosition(this.R - 76, this.T - 40);
+            }, '#ffffff']);
         }
+        let by = this.T - H * 0.47 - bh / 2;
+        for (const [txt, cb, col] of items) {
+            const b = pill(s, bw, bh, txt, cb, { textColor: col, fontSize: Math.round(bh * 0.44) });
+            b.node.setPosition(colX, by);
+            by -= bh + gap;
+        }
+        const ver = label(s, VERSION, 20, COL.dim, { outline: 3 });
+        ver.node.setPosition(colX, Math.max(this.B + 22, by + bh / 2 - 6));
+
+        // top right: secondary pills
+        const tw = 150, th = 52;
+        const tops: [string, () => void][] = [['玩法', () => this.howToPopup()], ['战绩', () => this.recordsPopup()], ['更新日志', () => this.changelogPopup()]];
+        tops.forEach(([txt, cb], i) => {
+            const b = pill(s, tw, th, txt, cb, { fontSize: 22 });
+            b.node.setPosition(this.R - tw / 2 - 20 - (tops.length - 1 - i) * (tw + 14), this.T - th / 2 - 16);
+        });
+        // bottom right: records
+        const d = Save.data;
+        const recTxt = `最高波次 ${d.bestWave}  ·  总局数 ${d.runs}  ·  总击杀 ${d.kills}`;
+        const rw = Math.min(this.R - artL - 20, 470);
+        const rec = pill(s, rw, 46, recTxt, () => this.recordsPopup(), { fontSize: 18, textColor: COL.dim });
+        rec.node.setPosition(this.R - rw / 2 - 20, this.B + 23 + 16);
+    }
+
+    // ================================================================ settings
+    /**
+     * Settings: a column of rows on the left (volume sliders, switches), 返回 on the right.
+     * From the main menu it replaces the menu; from the pause screen it opens on top of the game.
+     */
+    showSettings(fromPause: boolean) {
+        this.updateSize();
+        let s: Node;
+        if (fromPause) {
+            clearChildren(this.popup);
+            s = this.popup;
+            blocker(s, 215);
+        } else {
+            this.inSettings = true;
+            this.clearScreen();
+            this.hideHud();
+            s = this.screen;
+            const bg = mkNode('bg', s);
+            const g = bg.addComponent(Graphics);
+            g.fillColor = C('#0f0b12', 190); g.rect(-this.W, -this.H, this.W * 2, this.H * 2); g.fill();
+            tappable(bg, () => { });
+        }
+        const H = this.H;
+        const title = label(s, '设置', 44, '#ffffff', { outline: 5 });
+        title.node.setPosition(0, this.T - 46);
+        const rowW = Math.min(660, this.W * 0.56), rowH = Math.round(Math.max(54, Math.min(72, (H - 150) / 4 - 14)));
+        const rowX = this.L + 40 + rowW / 2;
+        const rowGap = Math.round(rowH * 0.22);
+        let y = this.T - 100 - rowH / 2;
+        const row = (name: string) => {
+            const r = mkNode('row', s);
+            const rg = r.addComponent(Graphics);
+            drawRR(rg, rowW, rowH, '#0f0b12', undefined, 10, 0, 235);
+            r.setPosition(rowX, y);
+            const l = label(r, name, Math.round(rowH * 0.4), '#ffffff', { align: 'left', outline: 0 });
+            l.node.setPosition(-rowW / 2 + 28, 0);
+            y -= rowH + rowGap;
+            return r;
+        };
+        const sliderW = Math.max(160, rowW - 220);
+        const volRow = (name: string, get: () => number, apply: (v: number) => void) => {
+            const r = row(name);
+            const sl = slider(r, sliderW, get(), v => apply(v), v => { apply(v); Save.save(); });
+            sl.setPosition(rowW / 2 - 30 - sliderW / 2 - 10, 0);
+        };
+        volRow('游戏音乐', () => Save.data.musicVol, v => { Save.data.musicVol = v; Save.data.music = v > 0; Sfx.setMusicVolume(v); });
+        volRow('游戏音效', () => Save.data.sfxVol, v => { Save.data.sfxVol = v; Save.data.sfx = v > 0; Sfx.setSfxVolume(v); });
+        const swRow = (name: string, get: () => boolean, set: (v: boolean) => void) => {
+            const r = row(name);
+            const t = toggle(r, get, v => { set(v); Save.save(); });
+            t.setPosition(rowW / 2 - 90, 0);
+        };
+        swRow('伤害数字', () => Save.data.numbers, v => { Save.data.numbers = v; });
+        swRow('屏幕震动', () => Save.data.shake, v => { Save.data.shake = v; });
+
+        const back = pill(s, Math.min(300, this.R - (rowX + rowW / 2) - 60), 70, '返回', () => {
+            if (fromPause) this.showPause(); else this.showMenu();
+        }, { fill: '#56688a', fillA: 255, stroke: '#dfe6f5', fontSize: 30 });
+        back.node.setPosition((rowX + rowW / 2 + this.R) / 2, -20);
+        const ver = label(s, VERSION, 20, COL.dim, { outline: 3 });
+        ver.node.setPosition(rowX, this.B + 22);
+    }
+
+    // ================================================================ menu popups
+    private textPopup(titleTxt: string, body: string, w = 560, h = 420) {
+        h = Math.min(h, this.H - 30);
+        this.infoPopup((p, pw, ph) => {
+            const t = label(p, titleTxt, 30, COL.gold, { outline: 4 });
+            t.node.setPosition(0, ph / 2 - 36);
+            const b = label(p, body, 18, COL.text, { width: pw - 60, align: 'left', outline: 2, anchorY: 1, lineH: 27 });
+            b.node.setPosition(-pw / 2 + 30, ph / 2 - 70);
+        }, Math.min(w, this.W - 40), h);
+    }
+
+    howToPopup() {
+        this.textPopup('玩法', [
+            '· 在屏幕任意处按住拖动来移动，武器会自动瞄准最近的敌人射击。',
+            '· 击杀敌人掉落晶体，靠近即可拾取：晶体既是经验，也是商店货币。',
+            '· 每波坚持到倒计时结束。升级时选一项属性强化。',
+            '· 波次之间进入商店：买武器和物品，锁定想要的商品，刷新换一批。',
+            '· 两把同种同阶武器可以合成为更高一阶；同类武器凑齐 2 把以上有套装加成。',
+            `· 撑过第 ${MAX_WAVE} 波即通关，可继续挑战无尽模式。`,
+        ].join('\n'), 600, 400);
+    }
+
+    recordsPopup() {
+        const d = Save.data;
+        const lines = [`最高波次  ${d.bestWave}`, `总局数  ${d.runs}`, `总击杀  ${d.kills}`, '', '各机体最高通关难度：'];
+        let any = false;
+        for (const c of CHARACTERS) {
+            const lv = Save.winLevel(c.id);
+            if (lv >= 0) { lines.push(`  ${c.name}  ·  ${DANGERS[lv].name}`); any = true; }
+        }
+        if (!any) lines.push('  还没有通关记录');
+        this.textPopup('战绩', lines.join('\n'), 460, 440);
+    }
+
+    changelogPopup() {
+        this.textPopup('更新日志', [
+            `${VERSION}  屏幕适配：手机竖握自动横屏、刘海屏避让、平板与带鱼屏；手机画面更清晰；新菜单与设置（音量滑条）。`,
+            'V1.2  音效精简：枪械与近战统一音色，击杀与点击换新音效，其余回归经典合成音；战斗 BGM。',
+            'V1.1  打击感：命中停顿、爆炸与碎片特效、录音音效。',
+            `V1.0  首个版本：${Object.keys(WEAPON_MAP).length} 种武器、${CHARACTERS.length} 种机体、${MAX_WAVE} 波 + 无尽模式。`,
+        ].join('\n\n'), 620, 420);
     }
 
     // ================================================================ character select
@@ -896,15 +1031,8 @@ export class UI {
         const cx = areaL + areaW / 2;
         const res = button(p, 260, 70, '继续', COL.btn, () => { clearChildren(this.popup); this.host.resume(); }, 32);
         res.node.setPosition(cx, this.B + 170);
-        const mk = (txt: string, get: () => boolean, set: (v: boolean) => void, x: number) => {
-            const b = button(p, 130, 50, '', COL.btnDark, () => { set(!get()); Save.save(); upd(); }, 20);
-            const upd = () => { b.setText(txt + (get() ? ' 开' : ' 关')); b.setColor(get() ? '#4f8a5b' : COL.btnDark); };
-            upd();
-            b.node.setPosition(x, this.B + 90);
-        };
-        mk('音效', () => Save.data.sfx, v => { Save.data.sfx = v; Sfx.setSfx(v); }, cx - 140);
-        mk('音乐', () => Save.data.music, v => { Save.data.music = v; Sfx.setMusic(v); }, cx);
-        mk('震屏', () => Save.data.shake, v => { Save.data.shake = v; }, cx + 140);
+        const st = button(p, 200, 50, '设置', COL.btnDark, () => this.showSettings(true), 22);
+        st.node.setPosition(cx, this.B + 95);
         const quit = button(p, 200, 50, '放弃本局', '#b8473f', () => {
             this.infoPopup((pp, w, h) => {
                 const q = label(pp, '确定放弃本局吗？', 28, COL.text);

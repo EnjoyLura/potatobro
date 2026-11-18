@@ -136,6 +136,8 @@ export class Sfx {
     static noiseBuf: AudioBuffer = null;
     static sfxOn = true;
     static musicOn = true;
+    static sfxVol = 1;   // player volume (settings slider), on top of MASTER
+    static musicVol = 1;
     private static comp: DynamicsCompressorNode = null;
     private static buses: { [k: string]: Bus } = {};
     private static samples: { [file: string]: Sample } = {};
@@ -194,8 +196,8 @@ export class Sfx {
 
     private static applyMaster() {
         if (!this.ctx) return;
-        this.sfxGain.gain.value = this.sfxOn ? MASTER.sfx : 0;
-        this.musicGain.gain.value = this.musicOn ? MASTER.music : 0;
+        this.sfxGain.gain.value = this.sfxOn ? MASTER.sfx * this.sfxVol : 0;
+        this.musicGain.gain.value = this.musicOn ? MASTER.music * this.musicVol : 0;
     }
 
     /** Load sfx/config.json, then fetch and decode the samples and start streaming the BGM. */
@@ -278,6 +280,12 @@ export class Sfx {
     private static unlocked = false;
 
     static setSfx(on: boolean) { this.sfxOn = on; this.applyMaster(); }
+    /** Settings sliders (0..1). Volume 0 also stops the music stream. */
+    static setSfxVolume(v: number) { this.sfxVol = Math.max(0, Math.min(1, v)); this.sfxOn = this.sfxVol > 0; this.applyMaster(); }
+    static setMusicVolume(v: number) {
+        this.musicVol = Math.max(0, Math.min(1, v));
+        if ((this.musicVol > 0) !== this.musicOn) this.setMusic(this.musicVol > 0); else this.applyMaster();
+    }
     static setMusic(on: boolean) {
         this.musicOn = on; this.applyMaster();
         if (this.bgmEl) { if (on) this.playBgm(); else this.bgmEl.pause(); }

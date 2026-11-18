@@ -28,8 +28,8 @@ export class Main extends Component implements WorldHost, UIHost {
     onLoad() {
         this.applyResolution();
         Save.load();
-        Sfx.setSfx(Save.data.sfx);
-        Sfx.setMusic(Save.data.music);
+        Sfx.setSfxVolume(Save.data.sfxVol);
+        Sfx.setMusicVolume(Save.data.musicVol);
         registerArt();
         Atlas.build();
         this.world = new World(this.node, this);
@@ -78,7 +78,7 @@ export class Main extends Component implements WorldHost, UIHost {
         this.world.zoom = this.ui.scale > 1.2 ? 1.15 : this.ui.scale > 1 ? 1.07 : 1;
         // rebuild the current screen so it fits the new aspect ratio
         switch (this.state) {
-            case 'menu': this.ui.showMenu(); break;
+            case 'menu': if (this.ui.inSettings) this.ui.showSettings(false); else this.ui.showMenu(); break;
             case 'play': this.ui.buildHud(); break;
             case 'pause': this.ui.buildHud(); this.ui.showPause(); break;
             case 'shop': this.ui.showShop(); break;
@@ -116,6 +116,7 @@ export class Main extends Component implements WorldHost, UIHost {
 
     // ================================================================ WorldHost
     shakeEnabled() { return Save.data.shake; }
+    numbersEnabled() { return Save.data.numbers; }
     viewSize() { const v = view.getVisibleSize(); return { w: v.width, h: v.height }; }
     onElite(text: string) { this.ui.toast(text, '#ff5c5c', 60, 44); }
     onPlayerHurt() { this.ui.flashHurt(); }

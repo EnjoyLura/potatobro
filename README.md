@@ -37,6 +37,8 @@ python tools/deploy_pages.py
 - **Small screens.** The UI scales up 1.15–1.3× when the game area is under 640 / 480 CSS px tall. Screens are rebuilt after a resize or rotation.
 - **Shop.** The inventory (weapons, set bonuses, item rows) is measured first and the cards get the remaining height. Card text shrinks to stay above the price buttons, and extra items collapse into a "+N" cell.
 - **Fullscreen.** The main menu has a 全屏 button where the browser supports it (Android, desktop). It also tries to lock landscape.
+- **Main menu.** Title and a stack of pill buttons (开始游戏 / 设置 / 全屏) in a left column, with the version below. The hero art fills the right side. 玩法 / 战绩 / 更新日志 pills run along the top right, and the records line sits at the bottom right.
+- **Settings** (from the menu or the pause screen): 游戏音乐 / 游戏音效 volume sliders, plus 伤害数字 and 屏幕震动 switches, all saved in localStorage. Bump `VERSION` in `ui/UI.ts` and add a line to `changelogPopup` with each release.
 
 ## Sound lab
 

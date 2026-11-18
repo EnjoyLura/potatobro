@@ -231,3 +231,100 @@ export function popIn(n: Node, delay = 0) {
 export function clearChildren(n: Node) {
     for (const c of n.children.slice()) c.destroy();
 }
+
+/** Flat dark pill button (menu style). Text is gold for the main action. */
+export function pill(parent: Node, w: number, h: number, text: string, cb: () => void, o: { fontSize?: number; textColor?: string; fill?: string; fillA?: number; stroke?: string } = {}): Btn {
+    const n = mkNode('pill', parent);
+    size(n, w, h);
+    const body = mkNode('body', n);
+    const g = body.addComponent(Graphics);
+    const fill = o.fill || '#0f0b12';
+    const draw = (c: string) => drawRR(g, w, h, c, o.stroke, h / 2, o.stroke ? 3 : 0, o.fillA !== undefined ? o.fillA : 235);
+    draw(fill);
+    const l = label(body, text, o.fontSize || Math.round(h * 0.42), o.textColor || '#ffffff', { outline: 0 });
+    const b: Btn = {
+        node: n, label: l, g, w, h, color: fill, enabled: true,
+        setColor(c: string) { b.color = c; draw(c); },
+        setEnabled(e: boolean) { b.enabled = e; opacity(n, e ? 255 : 140); },
+        setText(t: string) { l.string = t; },
+    };
+    let pressed = false;
+    n.on(Node.EventType.TOUCH_START, () => { pressed = true; body.setScale(0.95, 0.95, 1); });
+    const release = () => { pressed = false; body.setScale(1, 1, 1); };
+    n.on(Node.EventType.TOUCH_CANCEL, release);
+    n.on(Node.EventType.TOUCH_END, () => {
+        if (!pressed) return;
+        release();
+        if (!b.enabled) { Sfx.deny(); return; }
+        Sfx.unlock();
+        Sfx.click();
+        cb();
+    });
+    return b;
+}
+
+/** Horizontal slider 0..1: drag or tap anywhere on it. onChange fires while dragging, onEnd on release. */
+export function slider(parent: Node, w: number, value: number, onChange: (v: number) => void, onEnd?: (v: number) => void): Node {
+    const n = mkNode('slider', parent);
+    const ut = size(n, w + 40, 52);
+    const g = n.addComponent(Graphics);
+    const knob = mkNode('knob', n);
+    const kg = knob.addComponent(Graphics);
+    drawRR(kg, 24, 42, '#ffffff', '#120d14', 10, 4);
+    kg.fillColor = C('#120d14');
+    kg.roundRect(-3, -12, 6, 24, 3);
+    kg.fill();
+    let v = Math.max(0, Math.min(1, value));
+    const draw = () => {
+        g.clear();
+        g.fillColor = C('#ffffff', 70);
+        g.roundRect(-w / 2, -4, w, 8, 4);
+        g.fill();
+        if (v > 0) {
+            g.fillColor = C('#ffffff');
+            g.roundRect(-w / 2, -4, w * v, 8, 4);
+            g.fill();
+        }
+        knob.setPosition(-w / 2 + w * v, 0);
+    };
+    draw();
+    const setFrom = (e: EventTouch) => {
+        const p = e.getUILocation();
+        const loc = ut.convertToNodeSpaceAR(new Vec3(p.x, p.y, 0));
+        v = Math.max(0, Math.min(1, (loc.x + w / 2) / w));
+        draw();
+        onChange(v);
+    };
+    n.on(Node.EventType.TOUCH_START, (e: EventTouch) => { Sfx.unlock(); setFrom(e); });
+    n.on(Node.EventType.TOUCH_MOVE, setFrom);
+    const end = () => { if (onEnd) onEnd(v); };
+    n.on(Node.EventType.TOUCH_END, end);
+    n.on(Node.EventType.TOUCH_CANCEL, end);
+    return n;
+}
+
+/** On/off switch with an 开/关 label on its left. */
+export function toggle(parent: Node, get: () => boolean, set: (v: boolean) => void): Node {
+    const n = mkNode('toggle', parent);
+    size(n, 150, 52);
+    const sw = mkNode('sw', n);
+    sw.setPosition(30, 0);
+    const g = sw.addComponent(Graphics);
+    const knob = mkNode('knob', sw);
+    const kg = knob.addComponent(Graphics);
+    kg.fillColor = C('#ffffff');
+    kg.circle(0, 0, 17);
+    kg.fill();
+    const txt = label(n, '', 24, COL.mat, { outline: 0 });
+    txt.node.setPosition(-46, 0);
+    const draw = () => {
+        const on = get();
+        drawRR(g, 88, 44, on ? '#5ff0b0' : '#4a3d52', undefined, 22, 0);
+        knob.setPosition(on ? 22 : -22, 0);
+        txt.string = on ? '开' : '关';
+        txt.color = C(on ? COL.mat : COL.dim);
+    };
+    draw();
+    n.on(Node.EventType.TOUCH_END, () => { Sfx.unlock(); set(!get()); draw(); Sfx.click(); });
+    return n;
+}

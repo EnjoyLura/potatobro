@@ -22,6 +22,7 @@ export interface WorldHost {
     onElite(text: string): void;
     onPlayerHurt(): void;
     onLevelUp(): void;
+    numbersEnabled(): boolean;
 }
 
 const MAX_PARTICLES = 420;
@@ -1708,6 +1709,7 @@ export class World {
 
     // ---------------------------------------------------------------- damage numbers (sprite digits)
     showNum(x: number, y: number, v: number, r: number, g: number, b: number, crit: boolean, plus: boolean) {
+        if (!this.host.numbersEnabled()) return;
         let n: DmgNum = null;
         for (const o of this.nums) if (!o.active) { n = o; break; }
         if (!n) {
