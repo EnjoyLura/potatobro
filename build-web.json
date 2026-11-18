@@ -1,0 +1,11 @@
+{
+  "name": "core-rush",
+  "platform": "web-mobile",
+  "buildPath": "project://build",
+  "debug": false,
+  "md5Cache": false,
+  "sourceMaps": false,
+  "startScene": "8572d2e1-47c3-4aa4-b312-f2146504b082",
+  "scenes": [{"url": "db://assets/scenes/main.scene", "uuid": "8572d2e1-47c3-4aa4-b312-f2146504b082"}],
+  "packages": {"web-mobile": {"orientation": "landscape", "embedWebDebugger": false}}
+}
