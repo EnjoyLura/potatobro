@@ -1,30 +1,68 @@
-// Audio: sampled sound effects + streamed background music through WebAudio.
+// Audio: a few sampled sounds, the original WebAudio synth sounds, and streamed background music.
 //
-// Files live in build-templates/web-mobile/{sfx,bgm}/ and the build copies them next to index.html.
+// Only a few sounds use recorded samples: every gun (one SMG shot), every melee swing (one heavy
+// swing), kills and the UI click. Everything else plays the synth recipes below (the game's original
+// web sounds).
+// Sample files live in build-templates/web-mobile/sfx/ and the build copies them next to index.html.
 // sfx/config.json (edited with tools/sound-lab.html) overrides the defaults below: per-sound volume,
-// pitch variation, gaps, voices, mixer buses and review marks. The sound lab uses the same mixing rules
-// (tools/sound-lab.js), so what you hear there is what the game plays.
+// pitch variation, gaps, voices, mixer buses and review marks. The sound lab uses the same recipes
+// and mixing rules (tools/sound-lab.js), so what you hear there is what the game plays.
 //
 // Mixing: every sound belongs to a bus (weapon, impact, kill, boom, ...). A bus caps simultaneous voices
 // and turns itself down when it gets busy (more than `busyAt` plays in ~0.35 s), so six weapons firing
 // at once stay readable instead of piling up. Important sounds (hurt, level up, elite) duck the combat
-// buses for a moment. Every effect keeps a tiny synth fallback in case a file fails to load.
+// buses for a moment.
 
 type Wave = OscillatorType;
+type ToneFn = (freq: number, dur: number, type: Wave, vol: number, slide?: number, delay?: number) => void;
+type NoiseFn = (dur: number, vol: number, freq: number, q?: number, type?: BiquadFilterType, delay?: number, slide?: number) => void;
+/** p = pitch factor (random variation x caller rate), x = extra value (pickup combo). */
+type Recipe = (T: ToneFn, N: NoiseFn, p: number, x: number) => void;
+
+// The original synth sounds. Same table in tools/sound-lab.js: change both together.
+const R = Math.random;
+const RECIPES: { [k: string]: Recipe } = {
+    blast: (T, N, p) => { N(0.18, 0.18, 1200, 0.7, 'lowpass', 0, 0.3); T(160 * p, 0.12, 'square', 0.06, 0.5); },
+    flame: (T, N, p) => { N(0.25, 0.08, 600 * p, 1, 'bandpass', 0, 3); },
+    sling: (T, N, p) => { T(1200 * p, 0.05, 'triangle', 0.05, 0.6); },
+    zap: (T, N, p) => { N(0.12, 0.1, 4000 * p, 4, 'bandpass', 0, 0.5); T(1600 * p, 0.08, 'sawtooth', 0.04, 0.4); },
+    laser: (T, N, p) => { T(1800 * p, 0.3, 'sawtooth', 0.06, 0.2); T(900 * p, 0.3, 'square', 0.04, 0.3); },
+    hit: (T, N, p) => { N(0.06, 0.12, 2200 * p, 1, 'lowpass', 0, 0.4); T((220 + R() * 60) * p, 0.06, 'square', 0.035, 0.5); },
+    crit: (T, N, p) => { N(0.08, 0.18, 2600 * p, 1, 'lowpass', 0, 0.4); T(1500 * p, 0.12, 'square', 0.04, 0.6); },
+    explode: (T, N, p) => { N(0.5, 0.35, 900 * p, 0.8, 'lowpass', 0, 0.12); T(90 * p, 0.4, 'sine', 0.2, 0.4); },
+    hurt: (T, N, p) => { T(300 * p, 0.25, 'sawtooth', 0.12, 0.3); N(0.2, 0.12, 800, 1); },
+    dodge: (T, N, p) => { N(0.12, 0.08, 3000 * p, 2, 'highpass', 0, 0.5); },
+    pickup: (T, N, p, x) => { T((700 + x * 45) * p, 0.07, 'sine', 0.06, 1.3); },
+    heal: (T, N, p) => { T(660 * p, 0.15, 'sine', 0.07, 1.5); T(990 * p, 0.15, 'sine', 0.05, 1.3, 0.05); },
+    levelUp: (T, N, p) => { [523, 659, 784, 1047].forEach((f, i) => T(f * p, 0.18, 'square', 0.05, 1, i * 0.07)); },
+    buy: (T, N, p) => { T(1200 * p, 0.08, 'square', 0.05, 1); T(1800 * p, 0.14, 'square', 0.05, 1, 0.06); },
+    deny: (T, N, p) => { T(180 * p, 0.18, 'square', 0.06, 0.8); },
+    click: (T, N, p) => { T(900 * p, 0.04, 'triangle', 0.07, 0.7); },
+    reroll: (T, N, p) => { [600, 800, 1000].forEach((f, i) => T(f * p, 0.05, 'triangle', 0.05, 1, i * 0.035)); },
+    waveStart: (T, N, p) => { [392, 523, 659].forEach((f, i) => T(f * p, 0.22, 'sawtooth', 0.045, 1, i * 0.1)); },
+    waveEnd: (T, N, p) => { [659, 784, 988, 1319].forEach((f, i) => T(f * p, 0.25, 'triangle', 0.07, 1, i * 0.09)); },
+    spawnWarn: (T, N, p) => { T(220 * p, 0.3, 'square', 0.03, 1.2); },
+    gameOver: (T, N, p) => { [392, 330, 262, 196].forEach((f, i) => T(f * p, 0.4, 'sawtooth', 0.07, 0.98, i * 0.22)); },
+    victory: (T, N, p) => { [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) => T(f * p, 0.3, 'square', 0.05, 1, i * 0.12)); },
+    bossRoar: (T, N, p) => { T(70 * p, 1.2, 'sawtooth', 0.2, 0.6); N(1.0, 0.2, 400, 1, 'lowpass', 0, 0.3); },
+};
+/** Synth loudness at vol 1: the original synth level +12 dB, so it sits with the samples over the BGM. */
+const SYN = 1.8;
 
 interface SDef {
-    files: string[];
+    files: string[];  // sample files (no extension = .mp3); empty = synth
+    syn?: string;     // synth recipe name when there are no files
     bus: string;
-    vol: number;      // loudness after normalization
+    vol: number;      // loudness (samples: after normalization; synth: x original level)
     pv?: number;      // random pitch variation (+/-)
-    max?: number;     // max seconds to play (longer files fade out)
+    max?: number;     // samples: max seconds to play (longer files fade out)
     gap?: number;     // min seconds between two plays of this sound
     voices?: number;  // max simultaneous plays of this sound
     duck?: number;    // duck the combat buses to this gain while it plays
     mute?: boolean;
 }
 interface BusDef { vol: number; voices: number; busyAt: number }
-interface Bus { def: BusDef; gain: GainNode; active: number; load: number; loadT: number }
+interface Bus { def: BusDef; gain: GainNode; ends: number[]; load: number; loadT: number }
 interface Sample { buf: AudioBuffer; start: number; len: number; norm: number }
 
 const DUCKED = ['weapon', 'impact', 'kill', 'boom', 'enemy', 'pickup'];
@@ -32,49 +70,41 @@ const DUCKED = ['weapon', 'impact', 'kill', 'boom', 'enemy', 'pickup'];
 // Defaults (used when sfx/config.json cannot be loaded). Keep in sync with the generated config.
 const S = (files: string[], bus: string, vol: number, pv: number, max: number, gap: number, voices: number, duck = 0): SDef =>
     ({ files, bus, vol, pv, max, gap, voices, duck });
+const Y = (syn: string, bus: string, vol: number, pv: number, gap: number, voices: number, duck = 0): SDef =>
+    ({ files: [], syn, bus, vol, pv, gap, voices, duck });
 let DEFS: { [k: string]: SDef } = {
-    pistol: S(['shot_pistol'], 'weapon', 0.32, 0.08, 0.28, 0.06, 3),
-    smg: S(['shot_smg'], 'weapon', 0.24, 0.1, 0.18, 0.06, 3),
-    shotgun: S(['shot_shotgun'], 'weapon', 0.48, 0.06, 0.55, 0.12, 2),
-    sniper: S(['shot_sniper'], 'weapon', 0.48, 0.05, 0.55, 0.1, 2),
-    rocket: S(['shot_rocket'], 'weapon', 0.42, 0.06, 0.55, 0.1, 2),
-    magic: S(['shot_magic'], 'weapon', 0.34, 0.1, 0.38, 0.08, 2),
-    sling: S(['shot_sling'], 'weapon', 0.34, 0.12, 0.25, 0.07, 2),
-    flame: S(['flame'], 'weapon', 0.26, 0.1, 0.35, 0.12, 2),
-    turret: S(['turret'], 'weapon', 0.2, 0.12, 0.18, 0.08, 2),
-    laser: S(['laser'], 'weapon', 0.36, 0.06, 0.45, 0.1, 2),
-    zap: S(['zap'], 'weapon', 0.34, 0.1, 0.32, 0.08, 2),
-    swing: S(['swing1'], 'weapon', 0.3, 0.12, 0.28, 0.07, 3),
-    swingHeavy: S(['swing2'], 'weapon', 0.38, 0.08, 0.35, 0.09, 2),
-    stab: S(['stab'], 'weapon', 0.3, 0.12, 0.24, 0.07, 3),
-    mine: S(['mine'], 'weapon', 0.24, 0.08, 0.25, 0.15, 1),
-    hit: S(['hit1', 'hit2', 'hit3'], 'impact', 0.42, 0.12, 0.28, 0.05, 4),
-    crit: S(['crit'], 'impact', 0.52, 0.08, 0.42, 0.09, 2),
-    kill: S(['kill1', 'kill2', 'kill3'], 'kill', 0.55, 0.16, 0.42, 0.04, 5),
-    explode: S(['explode1'], 'boom', 0.62, 0.08, 0.85, 0.1, 2),
-    explodeSmall: S(['explode2'], 'boom', 0.5, 0.1, 0.6, 0.08, 3),
-    spit: S(['enemy_spit'], 'enemy', 0.26, 0.15, 0.3, 0.1, 2),
-    hurt: S(['hurt'], 'player', 0.7, 0.06, 0.45, 0.12, 2, 0.55),
-    dodge: S(['dodge'], 'player', 0.42, 0.1, 0.3, 0.1, 2),
-    shield: S(['shield'], 'player', 0.46, 0.06, 0.4, 0.1, 2),
-    heal: S(['heal'], 'player', 0.45, 0.05, 0.6, 0.1, 2),
-    revive: S(['revive'], 'player', 0.62, 0, 1.2, 0.5, 1, 0.5),
-    pickup: S(['pickup'], 'pickup', 0.3, 0, 0.2, 0.03, 4),
-    crate: S(['crate'], 'pickup', 0.5, 0.04, 0.5, 0.1, 2),
-    levelUp: S(['levelup'], 'event', 0.5, 0, 1.0, 0.25, 1, 0.6),
-    waveStart: S(['wave_start'], 'event', 0.48, 0, 1.0, 0.3, 1),
-    waveEnd: S(['wave_end'], 'event', 0.52, 0, 1.5, 0.3, 1, 0.5),
-    victory: S(['victory'], 'event', 0.58, 0, 3.2, 1, 1, 0.4),
-    gameOver: S(['gameover'], 'event', 0.58, 0, 2.6, 1, 1, 0.4),
-    bossRoar: S(['boss_roar'], 'event', 0.7, 0, 2.0, 1, 1, 0.5),
-    elite: S(['elite'], 'event', 0.65, 0, 1.2, 1, 1, 0.5),
-    spawnWarn: S(['spawn_warn'], 'event', 0.18, 0.1, 0.35, 0.3, 1),
-    click: S(['ui_click'], 'ui', 0.4, 0.05, 0.15, 0.04, 2),
-    buy: S(['ui_buy'], 'ui', 0.5, 0.03, 0.5, 0.05, 2),
-    deny: S(['ui_deny'], 'ui', 0.42, 0, 0.3, 0.1, 1),
-    reroll: S(['ui_reroll'], 'ui', 0.45, 0.04, 0.5, 0.05, 2),
-    sell: S(['ui_sell'], 'ui', 0.45, 0.04, 0.4, 0.05, 2),
-    combine: S(['ui_combine'], 'ui', 0.55, 0, 0.8, 0.1, 1),
+    gun: S(['shot_smg'], 'weapon', 0.14, 0.08, 0.2, 0.05, 4),
+    melee: S(['swing2'], 'weapon', 0.18, 0.08, 0.35, 0.07, 3),
+    kill: S(['kill.wav'], 'kill', 0.32, 0.1, 0.5, 0.045, 4),
+    rocket: Y('blast', 'weapon', 1, 0.08, 0.1, 2),
+    flame: Y('flame', 'weapon', 2.5, 0.08, 0.12, 2),
+    sling: Y('sling', 'weapon', 1, 0.08, 0.06, 3),
+    zap: Y('zap', 'weapon', 1, 0.05, 0.08, 2),
+    laser: Y('laser', 'weapon', 1, 0.04, 0.1, 2),
+    hit: Y('hit', 'impact', 1, 0.05, 0.05, 4),
+    crit: Y('crit', 'impact', 1, 0.05, 0.08, 2),
+    explode: Y('explode', 'boom', 0.5, 0.05, 0.08, 3),
+    hurt: Y('hurt', 'player', 1, 0, 0.12, 2, 0.55),
+    dodge: Y('dodge', 'player', 1, 0.05, 0.1, 2),
+    shield: Y('zap', 'player', 1, 0, 0.1, 2),
+    heal: Y('heal', 'player', 1, 0, 0.08, 2),
+    revive: Y('levelUp', 'player', 1, 0, 0.5, 1, 0.5),
+    pickup: Y('pickup', 'pickup', 1, 0, 0.03, 4),
+    crate: Y('buy', 'pickup', 1, 0, 0.1, 2),
+    levelUp: Y('levelUp', 'event', 1, 0, 0.2, 1, 0.6),
+    waveStart: Y('waveStart', 'event', 1, 0, 0.3, 1),
+    waveEnd: Y('waveEnd', 'event', 1, 0, 0.3, 1, 0.5),
+    victory: Y('victory', 'event', 1, 0, 1, 1, 0.4),
+    gameOver: Y('gameOver', 'event', 1, 0, 1, 1, 0.4),
+    bossRoar: Y('bossRoar', 'event', 0.6, 0, 1, 1, 0.5),
+    elite: Y('bossRoar', 'event', 0.6, 0, 1, 1, 0.5),
+    spawnWarn: Y('spawnWarn', 'event', 1, 0, 0.5, 1),
+    click: S(['click.wav'], 'ui', 0.14, 0.03, 0.3, 0.04, 2),
+    buy: Y('buy', 'ui', 1, 0, 0.05, 2),
+    deny: Y('deny', 'ui', 1, 0, 0.1, 1),
+    reroll: Y('reroll', 'ui', 1, 0, 0.05, 2),
+    sell: Y('buy', 'ui', 1, 0, 0.05, 2),
+    combine: Y('levelUp', 'ui', 1, 0, 0.1, 1),
 };
 let BUSES: { [k: string]: BusDef } = {
     weapon: { vol: 0.75, voices: 6, busyAt: 4 },
@@ -91,6 +121,13 @@ let MASTER = { sfx: 0.9, music: 0.5, thump: 1 };
 let BGM = { file: 'bgm/battle.mp3', battle: 1, menu: 0.55, menuCutoff: 900 };
 let FAILED: { [file: string]: boolean } = {};
 
+/** Count entries still playing at time `now` (and drop the finished ones). */
+function live(ends: number[], now: number) {
+    let n = 0;
+    for (let i = ends.length - 1; i >= 0; i--) { if (ends[i] > now) n++; else ends.splice(i, 1); }
+    return n;
+}
+
 export class Sfx {
     static ctx: AudioContext = null;
     static master: GainNode = null;
@@ -102,10 +139,11 @@ export class Sfx {
     private static comp: DynamicsCompressorNode = null;
     private static buses: { [k: string]: Bus } = {};
     private static samples: { [file: string]: Sample } = {};
-    private static active: { [k: string]: number } = {};
+    private static ends: { [k: string]: number[] } = {};
     private static rr: { [k: string]: number } = {};
     private static last: { [k: string]: number } = {};
     private static loading = false;
+    private static uiT = -1; // time of the last UI / event sound (tap() skips its click right after one)
     // music
     private static bgmEl: HTMLAudioElement = null;
     private static bgmFilter: BiquadFilterNode = null;
@@ -147,7 +185,7 @@ export class Sfx {
             let b = this.buses[k];
             if (!b) {
                 const g = this.ctx.createGain(); g.connect(this.sfxGain);
-                b = this.buses[k] = { def: BUSES[k], gain: g, active: 0, load: 0, loadT: 0 };
+                b = this.buses[k] = { def: BUSES[k], gain: g, ends: [], load: 0, loadT: 0 };
             }
             b.def = BUSES[k];
             b.gain.gain.value = b.def.vol;
@@ -160,20 +198,20 @@ export class Sfx {
         this.musicGain.gain.value = this.musicOn ? MASTER.music : 0;
     }
 
-    /** Load sfx/config.json, then fetch and decode every sample and start streaming the BGM. */
+    /** Load sfx/config.json, then fetch and decode the samples and start streaming the BGM. */
     static load(base = 'sfx/') {
         this.init();
         if (!this.ctx || this.loading) return;
         this.loading = true;
         const go = () => {
             const files: string[] = [];
-            for (const k in DEFS) for (const f of DEFS[k].files) if (files.indexOf(f) < 0) files.push(f);
+            for (const k in DEFS) for (const f of DEFS[k].files || []) if (files.indexOf(f) < 0) files.push(f);
             for (const f of files) {
-                fetch(base + f + '.mp3')
+                fetch(base + (/\.\w+$/.test(f) ? f : f + '.mp3'))
                     .then(r => { if (!r.ok) throw new Error('' + r.status); return r.arrayBuffer(); })
                     .then(ab => new Promise<AudioBuffer>((res, rej) => this.ctx.decodeAudioData(ab, res, rej)))
                     .then(buf => { this.samples[f] = this.analyse(buf); })
-                    .catch(() => { /* synth fallback stays in use */ });
+                    .catch(() => { /* that sound stays silent */ });
             }
             this.setupBgm();
         };
@@ -282,47 +320,59 @@ export class Sfx {
     }
 
     /**
-     * Play a sampled sound. Returns false when the sample is not loaded (caller falls back to synth)
-     * and true otherwise, also when the play was skipped by the gap / voice limits.
+     * Play a sound by key: a sample when the sound has files, otherwise its synth recipe.
+     * Applies the per-sound gap and voice limits and the bus voice cap / busy attenuation.
      */
-    private static play(key: string, volMul = 1, rate = 1): boolean {
+    private static play(key: string, volMul = 1, rate = 1, x = 0) {
         const def = DEFS[key];
-        if (!def || !this.ctx) return false;
-        if (def.mute) return true;
-        // pick a variant (round robin with a little randomness), skipping files marked as failed
-        let files = def.files.filter(f => !FAILED[f] && this.samples[f]);
-        if (!files.length) files = def.files.filter(f => this.samples[f]);
-        if (!files.length) return false;
-        const i = this.rr[key] = ((this.rr[key] || 0) + 1 + (files.length > 2 ? Math.floor(Math.random() * 2) : 0)) % files.length;
-        const smp = this.samples[files[i]];
-        if (!this.ready()) return true;
+        if (!def || def.mute || !this.ready()) return;
+        const files = def.files || [];
+        let smp: Sample = null;
+        if (files.length) {
+            // pick a variant (round robin with a little randomness), skipping files marked as failed
+            let ok = files.filter(f => !FAILED[f] && this.samples[f]);
+            if (!ok.length) ok = files.filter(f => this.samples[f]);
+            if (!ok.length) return;
+            const i = this.rr[key] = ((this.rr[key] || 0) + 1 + (ok.length > 2 ? Math.floor(Math.random() * 2) : 0)) % ok.length;
+            smp = this.samples[ok[i]];
+        } else if (!RECIPES[def.syn || key]) return;
         const bus = this.buses[def.bus] || this.buses.event;
         const t = this.ctx.currentTime;
-        if (def.gap && this.last[key] !== undefined && t - this.last[key] < def.gap) return true;
-        if ((this.active[key] || 0) >= (def.voices || 4)) return true;
-        if (bus.active >= bus.def.voices) { this.busLoad(bus, true); return true; }
+        if (def.gap && this.last[key] !== undefined && t - this.last[key] < def.gap) return;
+        const ends = this.ends[key] || (this.ends[key] = []);
+        if (live(ends, t) >= (def.voices || 4)) return;
+        if (live(bus.ends, t) >= bus.def.voices) { this.busLoad(bus, true); return; }
         this.last[key] = t;
         const busy = this.busLoad(bus, true);
-        const c = this.ctx;
-        const src = c.createBufferSource();
-        src.buffer = smp.buf;
         const r = rate * (1 + (def.pv ? (Math.random() * 2 - 1) * def.pv : 0));
-        src.playbackRate.value = r;
+        const c = this.ctx;
         const g = c.createGain();
-        const vol = smp.norm * def.vol * volMul * busy;
-        const dur = Math.min(smp.len, def.max || smp.len) / r;
-        g.gain.setValueAtTime(vol, t);
-        if (dur < smp.len / r - 0.01) {
-            g.gain.setValueAtTime(vol, t + Math.max(0, dur - 0.06));
-            g.gain.linearRampToValueAtTime(0.0001, t + dur);
+        g.connect(bus.gain);
+        let dur: number;
+        if (smp) {
+            const src = c.createBufferSource();
+            src.buffer = smp.buf;
+            src.playbackRate.value = r;
+            const vol = smp.norm * def.vol * volMul * busy;
+            dur = Math.min(smp.len, def.max || smp.len) / r;
+            g.gain.setValueAtTime(vol, t);
+            if (dur < smp.len / r - 0.01) {
+                g.gain.setValueAtTime(vol, t + Math.max(0, dur - 0.06));
+                g.gain.linearRampToValueAtTime(0.0001, t + dur);
+            }
+            src.connect(g);
+            src.start(t, smp.start, dur + 0.02);
+        } else {
+            g.gain.value = def.vol * volMul * busy * SYN;
+            dur = 0;
+            const T: ToneFn = (f, d, type, v, slide = 0, delay = 0) => { this.tone(f, d, type, v, slide, delay, g); dur = Math.max(dur, delay + d); };
+            const N: NoiseFn = (d, v, f, q = 1, type = 'lowpass', delay = 0, slide = 0) => { this.noise(d, v, f, q, type, delay, slide, g); dur = Math.max(dur, delay + d); };
+            RECIPES[def.syn || key](T, N, r, x);
         }
-        src.connect(g); g.connect(bus.gain);
-        this.active[key] = (this.active[key] || 0) + 1;
-        bus.active++;
-        src.onended = () => { this.active[key] = Math.max(0, (this.active[key] || 1) - 1); bus.active = Math.max(0, bus.active - 1); };
-        src.start(t, smp.start, dur + 0.02);
+        ends.push(t + dur);
+        bus.ends.push(t + dur);
+        if (def.bus === 'ui' || def.bus === 'event' || def.bus === 'pickup') this.uiT = t;
         if (def.duck) this.duck(def.duck, Math.min(0.6, dur * 0.6));
-        return true;
     }
 
     private static tone(freq: number, dur: number, type: Wave, vol: number, slide = 0, delay = 0, dest?: AudioNode) {
@@ -348,7 +398,7 @@ export class Sfx {
         s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.02);
     }
 
-    /** Short sine "thump" under impacts for low-end punch, routed (and attenuated) through a bus. */
+    /** Short sine "thump" under big impacts for low-end punch, routed (and attenuated) through a bus. */
     private static thump(f0: number, dur: number, vol: number, bus: string, gap: number) {
         if (!MASTER.thump || !this.ok('th_' + bus, gap)) return;
         const b = this.buses[bus];
@@ -357,119 +407,90 @@ export class Sfx {
     }
 
     // ---------------------------------------------------------------- weapons
-    /** Shot sound per weapon id. */
+    /** Shot sound per weapon id: every gun shares one sample (pitched per gun), the rest are synth. */
     static shot(id: string) {
         switch (id) {
-            case 'pistol': if (!this.play('pistol')) this.synthShot(0); break;
-            case 'smg': if (!this.play('smg')) this.synthShot(0); break;
-            case 'minigun': if (!this.play('smg', 0.9, 0.9)) this.synthShot(0); break;
-            case 'shotgun': if (!this.play('shotgun')) this.synthShot(1); this.thump(120, 0.12, 0.25, 'weapon', 0.12); break;
-            case 'sniper': if (!this.play('sniper')) this.synthShot(2); this.thump(140, 0.1, 0.2, 'weapon', 0.12); break;
-            case 'rocket': if (!this.play('rocket')) this.synthShot(1); break;
-            case 'grenade': if (!this.play('sling', 0.9, 0.75)) this.synthShot(5); break;
-            case 'flamethrower': if (!this.play('flame')) this.synthShot(3); break;
-            case 'slingshot': if (!this.play('sling')) this.synthShot(5); break;
-            case 'medigun': if (!this.play('magic', 0.7, 1.3)) this.synthShot(4); break;
-            case 'turret': if (!this.play('turret')) this.synthShot(5); break;
-            default: if (!this.play('pistol')) this.synthShot(0);
+            case 'smg': this.play('gun', 0.9, 1.05); break;
+            case 'minigun': this.play('gun', 0.8, 1.12); break;
+            case 'shotgun': this.play('gun', 1.2, 0.8); break;
+            case 'sniper': this.play('gun', 1.25, 0.72); break;
+            case 'medigun': this.play('gun', 0.6, 1.25); break;
+            case 'turret': this.play('gun', 0.75, 1.15); break;
+            case 'rocket': case 'grenade': this.play('rocket'); break;
+            case 'flamethrower': this.play('flame'); break;
+            case 'slingshot': this.play('sling'); break;
+            default: this.play('gun');
         }
     }
-    private static synthShot(kind: number) {
-        if (!this.ok('shoot' + kind, 0.06)) return;
-        const p = 1 + (Math.random() - 0.5) * 0.15;
-        if (kind === 0) { this.tone(880 * p, 0.07, 'square', 0.05, 0.4); this.noise(0.05, 0.05, 3000, 1, 'highpass'); }
-        else if (kind === 1) { this.noise(0.18, 0.18, 1200, 0.7, 'lowpass', 0, 0.3); this.tone(160 * p, 0.12, 'square', 0.06, 0.5); }
-        else if (kind === 2) { this.tone(1400 * p, 0.12, 'sawtooth', 0.05, 0.25); }
-        else if (kind === 3) { this.noise(0.25, 0.08, 600, 1, 'bandpass', 0, 3); }
-        else if (kind === 4) { this.tone(500 * p, 0.25, 'sawtooth', 0.06, 2.5); this.tone(1000 * p, 0.2, 'sine', 0.05, 2); }
-        else { this.tone(1200 * p, 0.05, 'triangle', 0.05, 0.6); }
-    }
-    /** kind: 0 light blade, 1 heavy blunt, 2 thrust. */
+    /** Every melee weapon shares one heavy swing. kind: 0 light blade, 1 heavy blunt, 2 thrust. */
     static swing(kind = 0) {
-        const key = kind === 1 ? 'swingHeavy' : kind === 2 ? 'stab' : 'swing';
-        if (this.play(key)) return;
-        if (!this.ok('swing', 0.07)) return;
-        this.noise(0.12, 0.12, 900 + Math.random() * 300, 1.5, 'bandpass', 0, 2.2);
+        if (kind === 1) this.play('melee');
+        else if (kind === 2) this.play('melee', 0.9, 1.2);
+        else this.play('melee', 1, 1.1);
     }
-    static zap() { if (this.play('zap')) return; if (!this.ok('zap', 0.08)) return; this.noise(0.12, 0.1, 4000, 4, 'bandpass', 0, 0.5); this.tone(1600, 0.08, 'sawtooth', 0.04, 0.4); }
-    static laser() { if (this.play('laser')) return; if (!this.ok('laser', 0.1)) return; this.tone(1800, 0.3, 'sawtooth', 0.06, 0.2); this.tone(900, 0.3, 'square', 0.04, 0.3); }
-    static magic() { if (this.play('magic')) return; this.zap(); }
+    static zap() { this.play('zap'); }
+    static laser() { this.play('laser'); }
 
     // ---------------------------------------------------------------- impacts
     static hit(crit = false, heavy = false) {
-        if (crit) {
-            if (!this.play('crit')) { if (this.ok('crit', 0.08)) { this.noise(0.08, 0.18, 2600, 1, 'lowpass', 0, 0.4); this.tone(1500, 0.12, 'square', 0.04, 0.6); } }
-            this.thump(150, 0.09, 0.22, 'impact', 0.08);
-            return;
-        }
-        if (!this.play('hit', heavy ? 1.15 : 1, heavy ? 0.85 : 1)) {
-            if (!this.ok('hit', 0.05)) return;
-            this.noise(0.06, 0.12, 2200, 1, 'lowpass', 0, 0.4);
-            this.tone(220 + Math.random() * 60, 0.06, 'square', 0.035, 0.5);
-        }
-        if (heavy) this.thump(110, 0.08, 0.18, 'impact', 0.08);
+        if (crit) this.play('crit');
+        else this.play('hit', heavy ? 1.15 : 1, heavy ? 0.85 : 1);
     }
     static kill(big = false) {
-        if (!this.play('kill', big ? 1.2 : 1, big ? 0.8 : 1)) {
-            if (this.ok('kill', 0.05)) {
-                const p = 1 + (Math.random() - 0.5) * 0.3;
-                this.tone(340 * p, 0.12, 'sine', 0.09, 0.35);
-                this.noise(0.1, 0.07, 1400, 1, 'lowpass', 0, 0.3);
-            }
-        }
-        // a little sub "pop" under kills makes them feel chunky
-        this.thump(big ? 90 : 130, big ? 0.16 : 0.07, big ? 0.3 : 0.14, 'kill', 0.07);
+        this.play('kill', big ? 1.2 : 1, big ? 0.8 : 1);
+        if (big) this.thump(90, 0.16, 0.3, 'kill', 0.07);
     }
     static explode(big = true) {
-        if (!this.play(big ? 'explode' : 'explodeSmall')) {
-            if (this.ok('explode', 0.08)) { this.noise(0.5, 0.35, 900, 0.8, 'lowpass', 0, 0.12); this.tone(90, 0.4, 'sine', 0.2, 0.4); }
-        }
+        this.play('explode', big ? 1 : 0.7, big ? 1 : 1.25);
         this.thump(big ? 70 : 95, big ? 0.3 : 0.18, big ? 0.38 : 0.26, 'boom', 0.1);
     }
-    static spit() { this.play('spit'); }
+    static spit() { /* enemy shots stay silent (too busy) */ }
 
     // ---------------------------------------------------------------- player / pickups
-    static hurt() { if (this.play('hurt')) { this.thump(90, 0.14, 0.25, 'player', 0.12); return; } if (!this.ok('hurt', 0.12)) return; this.tone(300, 0.25, 'sawtooth', 0.12, 0.3); this.noise(0.2, 0.12, 800, 1); }
-    static dodge() { if (this.play('dodge')) return; if (!this.ok('dodge', 0.1)) return; this.noise(0.12, 0.08, 3000, 2, 'highpass', 0, 0.5); }
-    static shield() { if (this.play('shield')) return; this.zap(); }
+    static hurt() { this.play('hurt'); }
+    static dodge() { this.play('dodge'); }
+    static shield() { this.play('shield'); }
     private static pickCombo = 0; private static pickT = 0;
     static pickup() {
         if (!this.ctx) return;
         const t = this.ctx.currentTime;
-        if (t - this.pickT > 0.45) this.pickCombo = 0;
+        if (t - this.pickT > 0.4) this.pickCombo = 0;
         this.pickT = t;
-        this.pickCombo = Math.min(this.pickCombo + 1, 16);
+        this.pickCombo = Math.min(this.pickCombo + 1, 14);
         // rising pitch while collecting a stream of crystals
-        if (this.play('pickup', 1, 1 + this.pickCombo * 0.035)) return;
-        if (!this.ok('pick', 0.03)) return;
-        this.tone(700 + this.pickCombo * 45, 0.07, 'sine', 0.06, 1.3);
+        this.play('pickup', 1, 1, this.pickCombo);
     }
-    static heal() { if (this.play('heal')) return; if (!this.ok('heal', 0.08)) return; this.tone(660, 0.15, 'sine', 0.07, 1.5); this.tone(990, 0.15, 'sine', 0.05, 1.3, 0.05); }
-    static crate() { if (this.play('crate')) return; this.buy(); }
-    static mine() { this.play('mine'); }
-    static revive() { if (this.play('revive')) return; this.levelUp(); }
-    static levelUp() {
-        if (this.play('levelUp')) return;
-        if (!this.ok('lvl', 0.2)) return;
-        [523, 659, 784, 1047].forEach((f, i) => this.tone(f, 0.18, 'square', 0.05, 1, i * 0.07));
-    }
+    static heal() { this.play('heal'); }
+    static crate() { this.play('crate'); }
+    static mine() { /* silent */ }
+    static revive() { this.play('revive'); }
+    static levelUp() { this.play('levelUp'); }
 
     // ---------------------------------------------------------------- UI
-    static buy() { if (this.play('buy')) return; if (!this.ok('buy', 0.05)) return; this.tone(1200, 0.08, 'square', 0.05, 1); this.tone(1800, 0.14, 'square', 0.05, 1, 0.06); }
-    static sell() { if (this.play('sell')) return; this.buy(); }
-    static combine() { if (this.play('combine')) return; this.levelUp(); }
-    static deny() { if (this.play('deny')) return; if (!this.ok('deny', 0.1)) return; this.tone(180, 0.18, 'square', 0.06, 0.8); }
-    static click() { if (this.play('click')) return; if (!this.ok('click', 0.04)) return; this.tone(900, 0.04, 'triangle', 0.07, 0.7); }
-    static reroll() { if (this.play('reroll')) return; if (!this.ok('reroll', 0.05)) return; [600, 800, 1000].forEach((f, i) => this.tone(f, 0.05, 'triangle', 0.05, 1, i * 0.035)); }
+    static buy() { this.play('buy'); }
+    static sell() { this.play('sell'); }
+    static combine() { this.play('combine'); }
+    static deny() { this.play('deny'); }
+    static click() { this.play('click'); }
+    /**
+     * Click for a tap that has no sound of its own (empty screen, dim background, cards). Waits a moment
+     * and stays quiet when the tap's handler already played a UI sound (button click, buy, deny...).
+     */
+    static tap() {
+        if (!this.ready()) return;
+        const t0 = this.ctx.currentTime;
+        setTimeout(() => { if (this.ctx && this.uiT < t0 - 0.005) this.click(); }, 30);
+    }
+    static reroll() { this.play('reroll'); }
 
     // ---------------------------------------------------------------- flow
-    static waveStart() { if (this.play('waveStart')) return; if (!this.ok('ws', 0.3)) return; [392, 523, 659].forEach((f, i) => this.tone(f, 0.22, 'sawtooth', 0.045, 1, i * 0.1)); }
-    static waveEnd() { if (this.play('waveEnd')) return; if (!this.ok('we', 0.3)) return; [659, 784, 988, 1319].forEach((f, i) => this.tone(f, 0.25, 'triangle', 0.07, 1, i * 0.09)); }
-    static spawnWarn() { if (this.play('spawnWarn')) return; if (!this.ok('warn', 0.5)) return; this.tone(220, 0.3, 'square', 0.03, 1.2); }
-    static gameOver() { if (this.play('gameOver')) return; [392, 330, 262, 196].forEach((f, i) => this.ok('go' + i, 0) && this.tone(f, 0.4, 'sawtooth', 0.07, 0.98, i * 0.22)); }
-    static victory() { if (this.play('victory')) return; [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) => this.ok('vic' + i, 0) && this.tone(f, 0.3, 'square', 0.05, 1, i * 0.12)); }
-    static bossRoar() { if (this.play('bossRoar')) return; if (!this.ok('roar', 1)) return; this.tone(70, 1.2, 'sawtooth', 0.2, 0.6); this.noise(1.0, 0.2, 400, 1, 'lowpass', 0, 0.3); }
-    static eliteAlarm() { if (this.play('elite')) return; this.bossRoar(); }
+    static waveStart() { this.play('waveStart'); }
+    static waveEnd() { this.play('waveEnd'); }
+    static spawnWarn() { this.play('spawnWarn'); }
+    static gameOver() { this.play('gameOver'); }
+    static victory() { this.play('victory'); }
+    static bossRoar() { this.play('bossRoar'); }
+    static eliteAlarm() { this.play('elite'); }
 
     // ---------------------------------------------------------------- music
     /** Stream the BGM file through an <audio> element (not decoded into memory) with a mood filter. */

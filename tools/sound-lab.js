@@ -1,7 +1,71 @@
 // Sound lab: review, mix and stress-test the game's sound effects and music.
-// The Engine below follows the same rules as assets/scripts/core/Sfx.ts (trim, normalization, pitch
-// variation, gaps, voice limits, busy-bus attenuation, ducking, thumps). Change both together.
+// The Engine below follows the same rules as assets/scripts/core/Sfx.ts (synth recipes, trim,
+// normalization, pitch variation, gaps, voice limits, busy-bus attenuation, ducking, thumps).
+// Change both together.
 'use strict';
+
+// The original synth sounds (same table as RECIPES in Sfx.ts). T = tone, N = noise, p = pitch, x = extra.
+const R = Math.random;
+const RECIPES = {
+  blast: (T, N, p) => { N(0.18, 0.18, 1200, 0.7, 'lowpass', 0, 0.3); T(160 * p, 0.12, 'square', 0.06, 0.5); },
+  flame: (T, N, p) => { N(0.25, 0.08, 600 * p, 1, 'bandpass', 0, 3); },
+  sling: (T, N, p) => { T(1200 * p, 0.05, 'triangle', 0.05, 0.6); },
+  zap: (T, N, p) => { N(0.12, 0.1, 4000 * p, 4, 'bandpass', 0, 0.5); T(1600 * p, 0.08, 'sawtooth', 0.04, 0.4); },
+  laser: (T, N, p) => { T(1800 * p, 0.3, 'sawtooth', 0.06, 0.2); T(900 * p, 0.3, 'square', 0.04, 0.3); },
+  hit: (T, N, p) => { N(0.06, 0.12, 2200 * p, 1, 'lowpass', 0, 0.4); T((220 + R() * 60) * p, 0.06, 'square', 0.035, 0.5); },
+  crit: (T, N, p) => { N(0.08, 0.18, 2600 * p, 1, 'lowpass', 0, 0.4); T(1500 * p, 0.12, 'square', 0.04, 0.6); },
+  explode: (T, N, p) => { N(0.5, 0.35, 900 * p, 0.8, 'lowpass', 0, 0.12); T(90 * p, 0.4, 'sine', 0.2, 0.4); },
+  hurt: (T, N, p) => { T(300 * p, 0.25, 'sawtooth', 0.12, 0.3); N(0.2, 0.12, 800, 1); },
+  dodge: (T, N, p) => { N(0.12, 0.08, 3000 * p, 2, 'highpass', 0, 0.5); },
+  pickup: (T, N, p, x) => { T((700 + x * 45) * p, 0.07, 'sine', 0.06, 1.3); },
+  heal: (T, N, p) => { T(660 * p, 0.15, 'sine', 0.07, 1.5); T(990 * p, 0.15, 'sine', 0.05, 1.3, 0.05); },
+  levelUp: (T, N, p) => { [523, 659, 784, 1047].forEach((f, i) => T(f * p, 0.18, 'square', 0.05, 1, i * 0.07)); },
+  buy: (T, N, p) => { T(1200 * p, 0.08, 'square', 0.05, 1); T(1800 * p, 0.14, 'square', 0.05, 1, 0.06); },
+  deny: (T, N, p) => { T(180 * p, 0.18, 'square', 0.06, 0.8); },
+  click: (T, N, p) => { T(900 * p, 0.04, 'triangle', 0.07, 0.7); },
+  reroll: (T, N, p) => { [600, 800, 1000].forEach((f, i) => T(f * p, 0.05, 'triangle', 0.05, 1, i * 0.035)); },
+  waveStart: (T, N, p) => { [392, 523, 659].forEach((f, i) => T(f * p, 0.22, 'sawtooth', 0.045, 1, i * 0.1)); },
+  waveEnd: (T, N, p) => { [659, 784, 988, 1319].forEach((f, i) => T(f * p, 0.25, 'triangle', 0.07, 1, i * 0.09)); },
+  spawnWarn: (T, N, p) => { T(220 * p, 0.3, 'square', 0.03, 1.2); },
+  gameOver: (T, N, p) => { [392, 330, 262, 196].forEach((f, i) => T(f * p, 0.4, 'sawtooth', 0.07, 0.98, i * 0.22)); },
+  victory: (T, N, p) => { [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) => T(f * p, 0.3, 'square', 0.05, 1, i * 0.12)); },
+  bossRoar: (T, N, p) => { T(70 * p, 1.2, 'sawtooth', 0.2, 0.6); N(1.0, 0.2, 400, 1, 'lowpass', 0, 0.3); },
+};
+const SYN = 1.8; // synth loudness at vol 1 (original level +12 dB)
+
+/** tone / noise generators writing into `dest` on context `c`; track(end) gets each voice's end time. */
+function mkTN(c, noiseBuf, dest, track) {
+  const T = (freq, dur, type, vol, slide = 0, delay = 0) => {
+    const t = c.currentTime + delay, o = c.createOscillator(), g = c.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(20, freq * slide), t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol), t + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(dest); o.start(t); o.stop(t + dur + 0.02); track(delay + dur);
+  };
+  const N = (dur, vol, freq, q = 1, type = 'lowpass', delay = 0, slide = 0) => {
+    const t = c.currentTime + delay, s = c.createBufferSource(); s.buffer = noiseBuf;
+    const f = c.createBiquadFilter(); f.type = type; f.frequency.setValueAtTime(freq, t); f.Q.value = q;
+    if (slide) f.frequency.exponentialRampToValueAtTime(Math.max(30, freq * slide), t + dur);
+    const g = c.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(f); f.connect(g); g.connect(dest); s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.02); track(delay + dur);
+  };
+  return [T, N];
+}
+function makeNoise(c) {
+  const b = c.createBuffer(1, c.sampleRate, c.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  return b;
+}
+function live(ends, now) {
+  let n = 0;
+  for (let i = ends.length - 1; i >= 0; i--) { if (ends[i] > now) n++; else ends.splice(i, 1); }
+  return n;
+}
+const hasExt = f => /\.\w+$/.test(f);
+const fileName = f => hasExt(f) ? f : f + '.mp3';
+const isSynth = def => !(def.files && def.files.length);
+/** Review ids of a sound: its files, or '@key' for a synth sound. */
+const reviewIds = (key, def) => isSynth(def) ? ['@' + key] : def.files;
 
 const BASE = '../build-templates/web-mobile/';
 const SFX = BASE + 'sfx/';
@@ -13,7 +77,7 @@ let savedText = '';      // last saved JSON (dirty check)
 
 // ------------------------------------------------------------------ engine
 const E = {
-  ctx: null, samples: {}, raw: {}, buses: {}, active: {}, rr: {}, last: {},
+  ctx: null, samples: {}, raw: {}, buses: {}, ends: {}, rr: {}, last: {}, noiseBuf: null, synthInfo: {},
   sfxGain: null, musicGain: null, comp: null,
   bgmEl: null, bgmFilter: null, bgmGain: null, mood: 1,
 
@@ -26,9 +90,10 @@ const E = {
     comp.connect(master);
     this.sfxGain = ctx.createGain(); this.sfxGain.connect(comp);
     this.musicGain = ctx.createGain(); this.musicGain.connect(master);
+    this.noiseBuf = makeNoise(ctx);
     for (const k of BUS_ORDER) {
       const g = ctx.createGain(); g.connect(this.sfxGain);
-      this.buses[k] = { gain: g, active: 0, load: 0, loadT: 0 };
+      this.buses[k] = { gain: g, ends: [], load: 0, loadT: 0 };
     }
     this.applyGains();
   },
@@ -66,7 +131,7 @@ const E = {
   },
 
   async loadFile(f) {
-    const r = await fetch(SFX + f + '.mp3', { cache: 'no-store' });
+    const r = await fetch(SFX + fileName(f), { cache: 'no-store' });
     if (!r.ok) throw new Error(f + ': HTTP ' + r.status);
     const ab = await r.arrayBuffer();
     const buf = await new Promise((res, rej) => this.ctx.decodeAudioData(ab, res, rej));
@@ -94,42 +159,67 @@ const E = {
   },
 
   /** Same as Sfx.play. opts.file forces one variant, opts.free skips gap/voice limits (preview clicks). */
-  play(key, volMul = 1, rate = 1, opts = {}) {
+  play(key, volMul = 1, rate = 1, opts = {}, x = 0) {
     const def = cfg.sounds[key]; if (!def || !this.ctx) return false;
-    if (def.mute && !opts.file) return true;
-    let files;
-    if (opts.file) files = [opts.file];
-    else {
-      files = def.files.filter(f => !isFailed(f) && this.samples[f]);
-      if (!files.length) files = def.files.filter(f => this.samples[f]);
-    }
-    if (!files.length || !this.samples[files[0]]) return false;
-    const i = this.rr[key] = ((this.rr[key] || 0) + 1 + (files.length > 2 ? Math.floor(Math.random() * 2) : 0)) % files.length;
-    const smp = this.samples[files[i]];
+    if (def.mute && !opts.free) return true;
+    let smp = null;
+    if (!isSynth(def)) {
+      let files;
+      if (opts.file) files = [opts.file];
+      else {
+        files = def.files.filter(f => !isFailed(f) && this.samples[f]);
+        if (!files.length) files = def.files.filter(f => this.samples[f]);
+      }
+      if (!files.length || !this.samples[files[0]]) return false;
+      const i = this.rr[key] = ((this.rr[key] || 0) + 1 + (files.length > 2 ? Math.floor(Math.random() * 2) : 0)) % files.length;
+      smp = this.samples[files[i]];
+    } else if (!RECIPES[def.syn || key]) return false;
     const bus = this.buses[def.bus] || this.buses.event, bd = cfg.buses[def.bus] || cfg.buses.event;
     const t = this.ctx.currentTime;
+    const ends = this.ends[key] || (this.ends[key] = []);
     if (!opts.free) {
       if (def.gap && this.last[key] !== undefined && t - this.last[key] < def.gap) return true;
-      if ((this.active[key] || 0) >= (def.voices || 4)) return true;
-      if (bus.active >= bd.voices) { this.busLoad(bus, bd, true); stats.dropped++; return true; }
+      if (live(ends, t) >= (def.voices || 4)) return true;
+      if (live(bus.ends, t) >= bd.voices) { this.busLoad(bus, bd, true); stats.dropped++; return true; }
     }
     this.last[key] = t;
     const busy = this.busLoad(bus, bd, true);
-    const src = this.ctx.createBufferSource(); src.buffer = smp.buf;
     const r = rate * (1 + (def.pv ? (Math.random() * 2 - 1) * def.pv : 0));
-    src.playbackRate.value = r;
-    const g = this.ctx.createGain();
-    const vol = smp.norm * def.vol * volMul * busy;
-    const dur = Math.min(smp.len, def.max || smp.len) / r;
-    g.gain.setValueAtTime(vol, t);
-    if (dur < smp.len / r - 0.01) { g.gain.setValueAtTime(vol, t + Math.max(0, dur - 0.06)); g.gain.linearRampToValueAtTime(0.0001, t + dur); }
-    src.connect(g); g.connect(bus.gain);
-    this.active[key] = (this.active[key] || 0) + 1; bus.active++;
-    src.onended = () => { this.active[key] = Math.max(0, this.active[key] - 1); bus.active = Math.max(0, bus.active - 1); };
-    src.start(t, smp.start, dur + 0.02);
+    const g = this.ctx.createGain(); g.connect(bus.gain);
+    let dur = 0;
+    if (smp) {
+      const src = this.ctx.createBufferSource(); src.buffer = smp.buf;
+      src.playbackRate.value = r;
+      const vol = smp.norm * def.vol * volMul * busy;
+      dur = Math.min(smp.len, def.max || smp.len) / r;
+      g.gain.setValueAtTime(vol, t);
+      if (dur < smp.len / r - 0.01) { g.gain.setValueAtTime(vol, t + Math.max(0, dur - 0.06)); g.gain.linearRampToValueAtTime(0.0001, t + dur); }
+      src.connect(g);
+      src.start(t, smp.start, dur + 0.02);
+    } else {
+      g.gain.value = def.vol * volMul * busy * SYN;
+      const [T, N] = mkTN(this.ctx, this.noiseBuf, g, e => { dur = Math.max(dur, e); });
+      RECIPES[def.syn || key](T, N, r, x);
+    }
+    ends.push(t + dur); bus.ends.push(t + dur);
     if (def.duck) this.duck(def.duck, Math.min(0.6, dur * 0.6));
     stats.played++;
     return true;
+  },
+
+  /** Render a synth recipe offline: its length and loudest 30 ms RMS at vol 1. */
+  async measureSynth(name) {
+    const sr = 44100, c = new OfflineAudioContext(1, sr * 2, sr);
+    let dur = 0;
+    const [T, N] = mkTN(c, makeNoise(c), c.destination, e => { dur = Math.max(dur, e); });
+    RECIPES[name](T, N, 1, 4);
+    const d = (await c.startRendering()).getChannelData(0);
+    const win = Math.round(sr * 0.03); let best = 0;
+    for (let i = 0; i + win < d.length; i += win >> 1) {
+      let acc = 0; for (let j = i; j < i + win; j++) acc += d[j] * d[j];
+      best = Math.max(best, Math.sqrt(acc / win));
+    }
+    return { dur, rms: best * SYN };
   },
 
   /** Unprocessed playback of a file (no trim / normalization), through the sfx master only. */
@@ -150,32 +240,38 @@ const E = {
     o.connect(g); g.connect(b.gain); o.start(t); o.stop(t + dur + 0.02);
   },
 
-  // game-level helpers (mirror Sfx.shot / hit / kill / explode / pickup)
+  // game-level helpers (mirror Sfx.shot / swing / hit / kill / explode / pickup)
   shot(id) {
     switch (id) {
-      case 'minigun': this.play('smg', 0.9, 0.9); break;
-      case 'shotgun': this.play('shotgun'); this.thump(120, 0.12, 0.25, 'weapon', 0.12); break;
-      case 'sniper': this.play('sniper'); this.thump(140, 0.1, 0.2, 'weapon', 0.12); break;
-      case 'grenade': this.play('sling', 0.9, 0.75); break;
+      case 'smg': this.play('gun', 0.9, 1.05); break;
+      case 'minigun': this.play('gun', 0.8, 1.12); break;
+      case 'shotgun': this.play('gun', 1.2, 0.8); break;
+      case 'sniper': this.play('gun', 1.25, 0.72); break;
+      case 'medigun': this.play('gun', 0.6, 1.25); break;
+      case 'turret': this.play('gun', 0.75, 1.15); break;
+      case 'rocket': case 'grenade': this.play('rocket'); break;
       case 'flamethrower': this.play('flame'); break;
       case 'slingshot': this.play('sling'); break;
-      case 'medigun': this.play('magic', 0.7, 1.3); break;
-      default: this.play(id);
+      default: this.play('gun');
     }
   },
-  hit(crit, heavy) {
-    if (crit) { this.play('crit'); this.thump(150, 0.09, 0.22, 'impact', 0.08); return; }
-    this.play('hit', heavy ? 1.15 : 1, heavy ? 0.85 : 1);
-    if (heavy) this.thump(110, 0.08, 0.18, 'impact', 0.08);
+  swing(kind) {
+    if (kind === 1) this.play('melee');
+    else if (kind === 2) this.play('melee', 0.9, 1.2);
+    else this.play('melee', 1, 1.1);
   },
-  kill(big) { this.play('kill', big ? 1.2 : 1, big ? 0.8 : 1); this.thump(big ? 90 : 130, big ? 0.16 : 0.07, big ? 0.3 : 0.14, 'kill', 0.07); },
-  explode(big) { this.play(big ? 'explode' : 'explodeSmall'); this.thump(big ? 70 : 95, big ? 0.3 : 0.18, big ? 0.38 : 0.26, 'boom', 0.1); },
+  hit(crit, heavy) {
+    if (crit) this.play('crit');
+    else this.play('hit', heavy ? 1.15 : 1, heavy ? 0.85 : 1);
+  },
+  kill(big) { this.play('kill', big ? 1.2 : 1, big ? 0.8 : 1); if (big) this.thump(90, 0.16, 0.3, 'kill', 0.07); },
+  explode(big) { this.play('explode', big ? 1 : 0.7, big ? 1 : 1.25); this.thump(big ? 70 : 95, big ? 0.3 : 0.18, big ? 0.38 : 0.26, 'boom', 0.1); },
   pickCombo: 0, pickT: 0,
-  pickup(opts) {
+  pickup(opts = {}) {
     const t = this.ctx.currentTime;
-    if (t - this.pickT > 0.45) this.pickCombo = 0;
-    this.pickT = t; this.pickCombo = Math.min(this.pickCombo + 1, 16);
-    this.play('pickup', 1, 1 + this.pickCombo * 0.035, opts);
+    if (t - this.pickT > 0.4) this.pickCombo = 0;
+    this.pickT = t; this.pickCombo = Math.min(this.pickCombo + 1, 14);
+    this.play('pickup', 1, 1, opts, this.pickCombo);
   },
 
   // music
@@ -221,7 +317,10 @@ function toast(msg, err) {
 const fmtT = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
 function review(f) { return cfg.review[f] || (cfg.review[f] = { status: '', note: '' }); }
 function isFailed(f) { return cfg.review[f] && cfg.review[f].status === 'fail'; }
-function allFiles() { const out = []; for (const k in cfg.sounds) for (const f of cfg.sounds[k].files) if (!out.includes(f)) out.push(f); return out; }
+function allFiles() { const out = []; for (const k in cfg.sounds) for (const f of cfg.sounds[k].files || []) if (!out.includes(f)) out.push(f); return out; }
+/** Everything that can be reviewed: sample files and synth sounds ('@key'). */
+function allIds() { const out = []; for (const k in cfg.sounds) for (const f of reviewIds(k, cfg.sounds[k])) if (!out.includes(f)) out.push(f); return out; }
+const dB = v => v > 0 ? (20 * Math.log10(v)).toFixed(0) + 'dB' : '—';
 function markDirty() {
   const d = JSON.stringify(cfg) !== savedText;
   $('#dirty').textContent = d ? '● 有未保存的修改' : '';
@@ -277,8 +376,9 @@ function meters() {
       const b = E.buses[k], d = cfg.buses[k]; if (!b || !b.ui || !d) continue;
       const load = b.load * Math.exp(-(now - b.loadT) / 0.35);
       const att = load > d.busyAt ? Math.sqrt(d.busyAt / load) : 1;
-      b.ui.meter.style.width = Math.min(100, b.active / d.voices * 100) + '%';
-      b.ui.st.textContent = `${b.active}/${d.voices} 声  ${att < 0.99 ? '压低 ' + Math.round(20 * Math.log10(att)) + 'dB' : ''}`;
+      const act = live(b.ends, now);
+      b.ui.meter.style.width = Math.min(100, act / d.voices * 100) + '%';
+      b.ui.st.textContent = `${act}/${d.voices} 声  ${att < 0.99 ? '压低 ' + Math.round(20 * Math.log10(att)) + 'dB' : ''}`;
     }
     if (E.bgmEl) {
       const el = E.bgmEl;
@@ -314,8 +414,8 @@ const GROUPS = [
   ['pickup', '拾取'], ['player', '玩家'], ['event', '事件 / 流程'], ['ui', '界面'],
 ];
 
-function soundStatus(def) {
-  const st = def.files.map(f => (cfg.review[f] || {}).status || '');
+function soundStatus(key, def) {
+  const st = reviewIds(key, def).map(f => (cfg.review[f] || {}).status || '');
   if (st.includes('fail')) return 'fail';
   if (st.every(s => s === 'pass')) return 'pass';
   return 'todo';
@@ -326,12 +426,12 @@ function buildList() {
   let shown = 0;
   for (const [bus, title] of GROUPS) {
     const keys = Object.keys(cfg.sounds).filter(k => cfg.sounds[k].bus === bus).filter(k => {
-      const d = cfg.sounds[k], st = soundStatus(d);
+      const d = cfg.sounds[k], st = soundStatus(k, d);
       if (filter === 'fail' && st !== 'fail') return false;
       if (filter === 'pass' && st !== 'pass') return false;
       if (filter === 'todo' && st !== 'todo') return false;
       if (filter === 'mute' && !d.mute) return false;
-      if (search) { const q = search.toLowerCase(); return (k + ' ' + (d.label || '') + ' ' + d.files.join(' ')).toLowerCase().includes(q); }
+      if (search) { const q = search.toLowerCase(); return (k + ' ' + (d.label || '') + ' ' + (d.files || []).join(' ') + ' ' + (d.syn || '')).toLowerCase().includes(q); }
       return true;
     });
     if (!keys.length) continue;
@@ -347,23 +447,25 @@ function soundCard(key) {
   const def = cfg.sounds[key];
   const card = h('div', { class: 'snd' });
   const refreshCls = () => {
-    const st = soundStatus(def);
+    const st = soundStatus(key, def);
     card.className = 'snd' + (st === 'fail' ? ' fail' : st === 'pass' ? ' pass' : '') + (def.mute ? ' mute' : '');
   };
-  const playBtn = h('button', { class: 'icon play', title: '按游戏处理播放（随机变体）', onclick: () => { E.resume(); key === 'pickup' ? E.pickup({ free: true }) : E.play(key, 1, 1, { free: true }); } }, '▶');
+  const playBtn = h('button', { class: 'icon play', title: '按游戏处理播放', onclick: () => { E.resume(); key === 'pickup' ? E.pickup({ free: true }) : E.play(key, 1, 1, { free: true }); } }, '▶');
   const mute = h('input', { type: 'checkbox' }); mute.checked = !!def.mute;
   mute.onchange = () => { def.mute = mute.checked || undefined; if (!def.mute) delete def.mute; refreshCls(); markDirty(); };
 
   const vars = h('div', { class: 'vars' });
-  for (const f of def.files) vars.append(variantRow(key, f, refreshCls));
+  if (isSynth(def)) vars.append(synthRow(key, refreshCls));
+  else for (const f of def.files) vars.append(variantRow(key, f, refreshCls));
 
   const busSel = h('select', {}, ...BUS_ORDER.map(b => h('option', { value: b, selected: b === def.bus }, (cfg.buses[b] && cfg.buses[b].label || b) + ' ' + b)));
   busSel.onchange = () => { def.bus = busSel.value; markDirty(); };
 
+  const synth = isSynth(def);
   const params = h('div', { class: 'params' },
-    slider('音量', def, 'vol', 0, 1.5, 0.01),
+    slider('音量', def, 'vol', 0, synth ? 3 : 1.5, 0.01, () => card.dispatchEvent(new Event('loud'))),
     slider('音高随机', def, 'pv', 0, 0.3, 0.01),
-    slider('最长', def, 'max', 0.05, 3.5, 0.01, null, v => (v ?? 0).toFixed(2) + 's'),
+    synth ? null : slider('最长', def, 'max', 0.05, 3.5, 0.01, null, v => (v ?? 0).toFixed(2) + 's'),
     slider('最小间隔', def, 'gap', 0, 1, 0.01, null, v => (v ?? 0).toFixed(2) + 's'),
     slider('同时数', def, 'voices', 1, 8, 1),
     slider('压低其他', def, 'duck', 0, 1, 0.05, null, v => v ? Math.round(v * 100) + '%' : '关'),
@@ -378,30 +480,59 @@ function soundCard(key) {
   return card;
 }
 
-function variantRow(key, f, refreshCls) {
-  const smp = E.samples[f];
-  const r = cfg.review[f] || {};
+/** ✓ / ✗ buttons and the note box for one review id (a file or '@key'). */
+function reviewControls(id, refreshCls) {
+  const r = cfg.review[id] || {};
   const pass = h('button', { class: 'rv pass' + (r.status === 'pass' ? ' on' : ''), title: '通过' }, '✓');
   const fail = h('button', { class: 'rv fail' + (r.status === 'fail' ? ' on' : ''), title: '不及格' }, '✗');
   const note = h('textarea', { class: 'note', rows: 1, placeholder: '不及格原因 / 想要的效果（会一起导出）' });
   note.value = r.note || '';
   note.style.display = r.status === 'fail' || r.note ? '' : 'none';
   const set = st => {
-    const rv = review(f); rv.status = rv.status === st ? '' : st;
+    const rv = review(id); rv.status = rv.status === st ? '' : st;
     pass.classList.toggle('on', rv.status === 'pass'); fail.classList.toggle('on', rv.status === 'fail');
     note.style.display = rv.status === 'fail' || rv.note ? '' : 'none';
     if (rv.status === 'fail') note.focus();
     cleanReview(); refreshCls(); markDirty();
   };
   pass.onclick = () => set('pass'); fail.onclick = () => set('fail');
-  note.oninput = () => { review(f).note = note.value; cleanReview(); markDirty(); };
-  const info = smp ? `${smp.buf.duration.toFixed(2)}s · 头部静音 ${(smp.start * 1000) | 0}ms · 有效 ${smp.len.toFixed(2)}s · 增益 ×${smp.norm.toFixed(1)}` : '加载失败';
+  note.oninput = () => { review(id).note = note.value; cleanReview(); markDirty(); };
+  return { pass, fail, note };
+}
+
+/** Refresh `fn` when the card's volume slider moves. */
+function onLoud(row, fn) { requestAnimationFrame(() => { const card = row.closest('.snd'); if (card) card.addEventListener('loud', fn); }); }
+
+function variantRow(key, f, refreshCls) {
+  const smp = E.samples[f];
+  const { pass, fail, note } = reviewControls(f, refreshCls);
+  const info = h('span', { class: 'info' });
+  const showInfo = () => {
+    info.textContent = smp ? `${smp.buf.duration.toFixed(2)}s · 头部静音 ${(smp.start * 1000) | 0}ms · 增益 ×${smp.norm.toFixed(1)} · 响度 ${dB(smp.rms * smp.norm * cfg.sounds[key].vol)}` : '加载失败';
+  };
+  showInfo();
   const play = h('button', { class: 'icon', title: '按游戏处理播放此变体', onclick: () => { E.resume(); key === 'pickup' ? E.pickup({ file: f, free: true }) : E.play(key, 1, 1, { file: f, free: true }); } }, '▶');
   const raw = h('button', { class: 'icon', title: '原声（不处理）', onclick: () => { E.resume(); E.playRaw(f); } }, '原');
   const cv = h('canvas', { class: 'wave', title: '点击播放原声' });
   cv.onclick = () => { E.resume(); E.playRaw(f); };
   requestAnimationFrame(() => drawWave(cv, smp, cfg.sounds[key]));
-  return h('div', { class: 'var' }, h('div', { class: 'var-top' }, play, raw, h('span', { class: 'fn' }, f + '.mp3'), h('span', { class: 'info' }, info), pass, fail), cv, note);
+  const row = h('div', { class: 'var' }, h('div', { class: 'var-top' }, play, raw, h('span', { class: 'fn' }, fileName(f)), info, pass, fail), cv, note);
+  onLoud(row, showInfo);
+  return row;
+}
+
+function synthRow(key, refreshCls) {
+  const name = cfg.sounds[key].syn || key;
+  const { pass, fail, note } = reviewControls('@' + key, refreshCls);
+  const info = h('span', { class: 'info' });
+  const showInfo = () => {
+    const m = E.synthInfo[name];
+    info.textContent = m ? `合成音色 · ${m.dur.toFixed(2)}s · 响度 ${dB(m.rms * cfg.sounds[key].vol)}` : '合成音色';
+  };
+  showInfo();
+  const row = h('div', { class: 'var' }, h('div', { class: 'var-top' }, h('span', { class: 'fn' }, '♪ ' + name), info, pass, fail), note);
+  onLoud(row, showInfo);
+  return row;
 }
 
 function drawWave(cv, smp, def) {
@@ -425,10 +556,10 @@ function drawWave(cv, smp, def) {
 }
 
 function updateStats() {
-  const files = allFiles();
+  const files = allIds();
   let p = 0, f = 0;
   for (const x of files) { const s = (cfg.review[x] || {}).status; if (s === 'pass') p++; else if (s === 'fail') f++; }
-  $('#stats').innerHTML = `${files.length} 个文件：<b class="g">${p} 通过</b> · <b class="r">${f} 不及格</b> · <b class="u">${files.length - p - f} 未审</b>`;
+  $('#stats').innerHTML = `${files.length} 个音效：<b class="g">${p} 通过</b> · <b class="r">${f} 不及格</b> · <b class="u">${files.length - p - f} 未审</b>`;
 }
 
 function buildFilters() {
@@ -496,14 +627,14 @@ function simFire(id) {
     });
   };
   switch (w.kind) {
-    case 'gun': if (id === 'turret') E.play('turret'); else E.shot(id); hitAll(w.hits, 90, false); break;
+    case 'gun': E.shot(id); hitAll(w.hits, 90, false); break;
     case 'boom': E.shot(id); later(id === 'rocket' ? 320 : 480, () => { E.explode(w.big); hitAll(4, 10, true); }); break;
     case 'chain': E.play('zap'); hitAll(w.hits, 30, false); break;
     case 'beam': E.play('laser'); hitAll(w.hits, 40, false); break;
-    case 'swing': E.play('swing'); hitAll(w.hits, 90, false); break;
-    case 'heavy': E.play('swingHeavy'); hitAll(w.hits, 110, true); break;
-    case 'stab': E.play('stab'); hitAll(w.hits, 100, false); break;
-    case 'punch': E.play('swingHeavy'); hitAll(w.hits, 90, true); break;
+    case 'swing': E.swing(0); hitAll(w.hits, 90, false); break;
+    case 'heavy': E.swing(1); hitAll(w.hits, 110, true); break;
+    case 'stab': E.swing(2); hitAll(w.hits, 100, false); break;
+    case 'punch': E.swing(1); hitAll(w.hits, 90, true); break;
   }
 }
 
@@ -515,9 +646,8 @@ function simTick() {
     if (sim.cds[i] <= 0) { sim.cds[i] += SIM_WEAPONS[id].cd * (0.9 + Math.random() * 0.2); simFire(id); }
   });
   if ($('#simEvents').checked) {
-    if (Math.random() < dt / 4) { E.play('hurt'); E.thump(90, 0.14, 0.25, 'player', 0.12); }
+    if (Math.random() < dt / 4) E.play('hurt');
     if (Math.random() < dt / 9) E.play('levelUp');
-    if (Math.random() < dt / 3) E.play('spit');
     if (Math.random() < dt / 25) E.play('elite');
   }
   const secs = (performance.now() - sim.t0) / 1000;
@@ -565,9 +695,10 @@ function download() {
 }
 function failList() {
   const lines = [];
-  for (const k in cfg.sounds) for (const f of cfg.sounds[k].files) {
+  for (const k in cfg.sounds) for (const f of reviewIds(k, cfg.sounds[k])) {
     const r = cfg.review[f];
-    if (r && r.status === 'fail') lines.push(`- ${f}.mp3（${cfg.sounds[k].label || k}）：${r.note || '（无备注）'}`);
+    const what = f[0] === '@' ? '合成音效 ' + k : fileName(f);
+    if (r && r.status === 'fail') lines.push(`- ${what}（${cfg.sounds[k].label || k}）：${r.note || '（无备注）'}`);
   }
   const text = lines.length ? '不及格的音效：\n' + lines.join('\n') : '';
   if (!text) { toast('还没有标记不及格的文件'); return; }
@@ -586,6 +717,7 @@ async function boot() {
   const files = allFiles();
   const errs = [];
   await Promise.all(files.map(f => E.loadFile(f).catch(e => errs.push(e.message))));
+  for (const name in RECIPES) E.synthInfo[name] = await E.measureSynth(name);
   if (errs.length) toast('部分文件加载失败：' + errs.join('；'), true);
   buildFilters(); buildSidebar(); buildSim(); wireBgm(); buildList(); updateStats(); markDirty();
   $('#search').addEventListener('input', e => { search = e.target.value.trim(); buildList(); });

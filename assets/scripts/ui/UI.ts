@@ -5,7 +5,7 @@ import { Atlas } from '../core/Atlas';
 import { Sfx } from '../core/Sfx';
 import { Save } from '../core/Save';
 import {
-    COL, C, panel, shadowPanel, label, button, Btn, blocker, bar, Bar, icon, iconFit, popIn, clearChildren, size, opacity, tappable, drawRR,
+    COL, C, panel, shadowPanel, label, button, Btn, blocker, bar, Bar, icon, iconFit, popIn, clearChildren, size, opacity, tappable, tapSound, drawRR,
 } from './UIKit';
 import { itemLines, weaponLines, classText, tierColor, statValueText, Line } from './Text';
 import { CHARACTERS, CharDef } from '../data/Characters';
@@ -84,6 +84,7 @@ export class UI {
     // ================================================================ input (floating joystick)
     setupInput() {
         const n = this.inputLayer;
+        tapSound(n); // a quick tap on empty space clicks (drags for the joystick stay quiet)
         const toLocal = (e: EventTouch) => {
             const p = e.getUILocation();
             const ut = this.root.getComponent(UITransform) || size(this.root, 1, 1);

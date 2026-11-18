@@ -1,6 +1,6 @@
 # 核芯突围 CORE RUSH
 
-A landscape mobile arena wave-survival shooter (in the same genre as Brotato), built with **Cocos Creator 3.8.8** and exported to **web-mobile**. All art is generated in code at runtime. Audio is AI-generated with TapTap Maker: 46 sound effects in `build-templates/web-mobile/sfx/` and a battle BGM in `build-templates/web-mobile/bgm/battle.mp3`. The build copies both folders next to `index.html`.
+A landscape mobile arena wave-survival shooter (in the same genre as Brotato), built with **Cocos Creator 3.8.8** and exported to **web-mobile**. All art is generated in code at runtime. Most sound effects are WebAudio synth sounds generated in code. Four use recorded samples in `build-templates/web-mobile/sfx/`: every gun shares one SMG shot (`shot_smg.mp3`), every melee weapon shares one heavy swing (`swing2.mp3`), kills use `kill.wav` and UI clicks use `click.wav`. The battle BGM is `build-templates/web-mobile/bgm/battle.mp3`. The build copies both folders next to `index.html`.
 
 ## Build (CLI)
 
@@ -28,14 +28,14 @@ tools\sound-lab.bat
 
 This opens http://127.0.0.1:8766/tools/sound-lab.html, a page for reviewing and mixing every sound and the BGM:
 
-- Each sound plays with the game's processing. You can also play each variant raw, with its waveform.
+- Each sound plays with the game's processing. Sample sounds also show their waveform and can be played raw; synth sounds are marked ♪. Every card shows a loudness figure, so you can compare sounds.
 - Mark each file pass or fail and add a note. "复制不及格清单" copies the failed files and their notes to the clipboard so they can be regenerated.
 - Per-sound sliders: volume, pitch variation, max length, minimum gap, max simultaneous plays, and how much it ducks the combat buses.
 - Per-bus volume, voice cap and busy threshold, with live meters.
 - BGM preview in battle, boss and menu (muffled) modes.
 - A battle simulator fires up to six chosen weapons with hits, kills and pickups using the game's mixing rules, so you can hear how loud a full loadout gets.
 
-"保存配置" (or Ctrl+S) writes `build-templates/web-mobile/sfx/config.json`, plus `build/web-mobile/sfx/config.json` if a build exists. The game reads this file at startup. Failed variants are skipped in game whenever the sound has another variant.
+"保存配置" (or Ctrl+S) writes `build-templates/web-mobile/sfx/config.json`, plus `build/web-mobile/sfx/config.json` if a build exists. The game reads this file at startup. "复制不及格清单" copies the failed sounds and notes, ready to send back for replacement.
 
 ## Gameplay
 
@@ -61,12 +61,13 @@ Progress (best wave, wins per character and danger, settings) is saved in localS
 
 ## Feel and effects
 
-- **Audio** (`core/Sfx.ts`): settings come from `sfx/config.json`. Samples are decoded with WebAudio, trimmed of leading silence, loudness-normalized and played with random pitch.
+- **Audio** (`core/Sfx.ts`): settings come from `sfx/config.json`. Sounds without files play a synth recipe (the `RECIPES` table, mirrored in `tools/sound-lab.js`). Samples are decoded with WebAudio, trimmed of leading silence, loudness-normalized and played with random pitch. Guns and melee weapons are told apart only by pitch and volume.
+  - Buttons click. Short taps on empty space, dim backgrounds and cards also click, unless the tap already played a UI sound.
   - Every sound goes through a bus (weapon, impact, kill, boom, enemy, pickup, player, event, ui). A bus caps how many sounds overlap and turns itself down once more than `busyAt` sounds hit within about 0.35 s, so a full loadout stays readable.
   - Hurt, level-up, elite and wave-end sounds briefly duck the combat buses.
   - Crystal pickups rise in pitch while chained.
   - The BGM streams through an `<audio>` element instead of being decoded into memory. It is muffled with a low-pass filter in the menu, shop and pause screens.
-  - If a file fails to load, that sound falls back to the old synth.
+  - If a sample fails to load, that sound stays silent.
 - **Hits**: enemies flash white, squash, and get an impact star plus directional sparks. Crits add a gold ring, a small shake and a bigger number pop.
 - **Kills**: white silhouette pop, glow ring, outlined gibs that arc, bounce and leave droplet stains, plus a ground splat.
 - **Explosions**: flash, fireballs, shock ring, smoke, embers and a scorch mark.
@@ -80,7 +81,7 @@ Progress (best wave, wins per character and danger, settings) is saved in localS
 assets/scenes/main.scene      Canvas + Main component
 assets/scripts/Main.ts        entry point, game state machine
 assets/scripts/core/          Atlas (runtime texture packing), Art (procedural sprites),
-                              Sfx (WebAudio synth + music), Save, Nodes, Util
+                              Sfx (synth + samples + music), Save, Nodes, Util
 assets/scripts/data/          Stats, Weapons, Items, Characters, Enemies, Upgrades
 assets/scripts/game/          Run (economy/inventory/shop), World (simulation)
 assets/scripts/ui/            UIKit, Text, UI (all screens)

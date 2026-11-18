@@ -147,7 +147,25 @@ export function opacity(n: Node, a: number) {
 
 /** Makes a node tappable with a callback (no visuals). */
 export function tappable(n: Node, cb: (e: EventTouch) => void) {
-    n.on(Node.EventType.TOUCH_END, (e: EventTouch) => { Sfx.unlock(); cb(e); });
+    n.on(Node.EventType.TOUCH_END, (e: EventTouch) => { Sfx.unlock(); cb(e); Sfx.tap(); });
+}
+
+/** A short, nearly still tap (not a drag or a hold). Shared by the click-on-empty-space handlers. */
+export class TapCheck {
+    private t = 0; private x = 0; private y = 0; private id = -1;
+    start(id: number, x: number, y: number) { this.id = id; this.t = Date.now(); this.x = x; this.y = y; }
+    end(id: number, x: number, y: number) {
+        const ok = id === this.id && Date.now() - this.t < 350 && Math.hypot(x - this.x, y - this.y) < 18;
+        this.id = -1;
+        return ok;
+    }
+}
+
+/** Click sound for short taps on a node that otherwise does nothing (backgrounds, blockers). */
+export function tapSound(n: Node) {
+    const tc = new TapCheck();
+    n.on(Node.EventType.TOUCH_START, (e: EventTouch) => { const p = e.getUILocation(); tc.start(e.getID(), p.x, p.y); });
+    n.on(Node.EventType.TOUCH_END, (e: EventTouch) => { const p = e.getUILocation(); if (tc.end(e.getID(), p.x, p.y)) { Sfx.unlock(); Sfx.tap(); } });
 }
 
 /** Full-screen touch blocker with dim background. */
@@ -158,8 +176,7 @@ export function blocker(parent: Node, alpha = 170): Node {
     g.fillColor = C('#0b080d', alpha);
     g.rect(-3000, -2000, 6000, 4000);
     g.fill();
-    n.on(Node.EventType.TOUCH_START, () => { });
-    n.on(Node.EventType.TOUCH_END, () => { });
+    tapSound(n);
     return n;
 }
 
