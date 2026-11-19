@@ -15,7 +15,7 @@ import { showCodex } from './CodexUI';
 import { showSaves, showCloudConflict } from './SaveUI';
 
 /** Shown on the main menu and settings screen; bump with each release (see changelogPopup). */
-export const VERSION = 'V1.5';
+export const VERSION = 'V1.6';
 const START_BONUS = 30;
 import { itemLines, weaponLines, classText, tierColor, statValueText, Line } from './Text';
 import { CHARACTERS, CharDef } from '../data/Characters';
@@ -254,7 +254,7 @@ export class UI {
 
         // top right: secondary pills
         const tw = Math.min(150, (this.W - colW - 120) / 4 - 14), th = 52;
-        const tops: [string, () => void][] = [['玩法', () => this.howToPopup()], ['图鉴', () => this.showCodex()], ['存档', () => this.showSaves()], ['更新日志', () => this.changelogPopup()]];
+        const tops: [string, () => void][] = [['玩法', () => this.howToPopup()], ['图鉴', () => this.showCodex()], ['存档', () => this.showSaves()]];
         tops.forEach(([txt, cb], i) => {
             const b = pill(s, tw, th, txt, cb, { fontSize: 22 });
             b.node.setPosition(this.R - tw / 2 - 20 - (tops.length - 1 - i) * (tw + 14), this.T - th / 2 - 16);
@@ -389,7 +389,8 @@ export class UI {
 
     changelogPopup() {
         this.textPopup('更新日志', [
-            `${VERSION}  新地图：毒沼雨林、沙海遗迹、机械废墟、星渊回廊（共 8 张）；新怪物与机制：治疗、钻地、炮塔、瞬移、环绕射击、跳跃、毒雾与灼烧痕迹；每张地图都有独立造型的精英与首领；每个关卡新增无尽模式；物品图标不再重复。`,
+            `${VERSION}  难度提升（怪物更多、血量更高）；受击无敌时间延长；伤害数字缩写 K / W；升级刷新与复活（每局两次）的广告位；最终构筑可点开查看；修复属性弹窗无法关闭。`,
+            `V1.5  新地图：毒沼雨林、沙海遗迹、机械废墟、星渊回廊（共 8 张）；新怪物与机制：治疗、钻地、炮塔、瞬移、环绕射击、跳跃、毒雾与灼烧痕迹；每张地图都有独立造型的精英与首领；每个关卡新增无尽模式；物品图标不再重复。`,
             'V1.4  关卡：荒原虫巢、冰封裂谷、熔火工坊、虚空星港，各有场地、怪物、精英与首领；难度逐级解锁。图鉴（武器、物品、怪物）。TapTap 云存档。全新界面风格。',
             'V1.3  屏幕适配：手机竖握自动横屏、刘海屏避让、平板与带鱼屏；手机画面更清晰；新菜单与设置（音量滑条）。',
             'V1.2  音效精简：枪械与近战统一音色，击杀与点击换新音效，其余回归经典合成音；战斗 BGM。',
@@ -543,7 +544,7 @@ export class UI {
                 const got = label(s, `✓ 已获得开局晶体 +${START_BONUS}`, 20, COL.mat, { outline: 3 });
                 got.node.setPosition(0, this.B + 44);
             } else {
-                const ab = adButton(s, 280, 56, `开局晶体 +${START_BONUS}`, () => {
+                const ab = adButton(s, 280, 62, `开局晶体 +${START_BONUS}`, () => {
                     Ads.show('startBonus').then(r => {
                         if (!r.ok) { this.toast(r.msg, COL.gold, 0, 26); return; }
                         this.startBonus = true;
@@ -657,6 +658,7 @@ export class UI {
     // ================================================================ shared widgets
     statsPanel(parent: Node, w: number, h: number, run: Run): Node {
         const p = mkNode('stats', parent);
+        size(p, w, h); // tappable (popup close) needs a UITransform
         shadowPanel(p, w, h, COL.panel);
         const t = label(p, '属性', 26, COL.gold);
         t.node.setPosition(0, h / 2 - 24);
@@ -799,7 +801,20 @@ export class UI {
                 if (run.mats < cost) { Sfx.deny(); return; }
                 run.mats -= cost; rerolls++; Sfx.reroll(); build();
             }, 26);
-            rb.node.setPosition(x0 + 1.5 * (cw + 16), this.B + 70);
+            const lvl = run.level - run.levelsPending + 1;
+            const adOk = Ads.visible('reroll') && run.adLevelReroll !== lvl;
+            rb.node.setPosition(x0 + 1.5 * (cw + 16) - (adOk ? 125 : 0), this.B + 70);
+            // rewarded ad: one free reroll per level
+            if (adOk) {
+                const ab = adButton(s, 230, 64, '免费刷新', () => {
+                    Ads.show('reroll').then(r => {
+                        if (!r.ok) { this.toast(r.msg, COL.gold, 0, 26); return; }
+                        run.adLevelReroll = lvl;
+                        Sfx.reroll(); build();
+                    });
+                }, 24);
+                ab.node.setPosition(x0 + 1.5 * (cw + 16) + 125, this.B + 70);
+            }
             const ml = label(s, `◆ ${run.mats}`, 28, COL.mat, { align: 'left' });
             ml.node.setPosition(this.L + 30, this.B + 70);
             if (statW) {
@@ -853,7 +868,7 @@ export class UI {
         rec.node.setPosition(115, this.B + 55);
         // rewarded ad: take it and get another item of the same quality (once per wave)
         if (Ads.visible('crate') && run.adCrateWave !== run.wave) {
-            const ab = adButton(s, 260, 54, '再拿一件同品质', () => {
+            const ab = adButton(s, 260, 70, '再拿一件同品质', () => {
                 Ads.show('crate').then(r => {
                     if (!r.ok) { this.toast(r.msg, COL.gold, 0, 26); return; }
                     run.adCrateWave = run.wave;
@@ -1145,7 +1160,7 @@ export class UI {
 
     // ================================================================ revive offer (rewarded ad)
     /** After death: watch an ad to revive with half health, or give up. */
-    showReviveOffer(onRevive: () => void, onGiveUp: () => void) {
+    showReviveOffer(left: number, onRevive: () => void, onGiveUp: () => void) {
         clearChildren(this.popup);
         const p = this.popup;
         blocker(p, 190);
@@ -1153,7 +1168,7 @@ export class UI {
         shadowPanel(box, 460, 300, COL.panel2, '#3a3c47');
         const t = label(box, '核芯损毁', 44, COL.bad, { outline: 5 });
         t.node.setPosition(0, 100);
-        const d = label(box, '观看一段广告即可原地复活\n恢复 50% 生命并震退周围敌人（每局一次）', 19, COL.text, { outline: 2, width: 430, lineH: 26 });
+        const d = label(box, `观看一段广告即可原地复活\n恢复 50% 生命并震退周围敌人（本局还可复活 ${left} 次）`, 19, COL.text, { outline: 2, width: 430, lineH: 26 });
         d.node.setPosition(0, 34);
         const ab = adButton(box, 300, 62, '复活', () => {
             Ads.show('revive').then(r => {
@@ -1208,13 +1223,22 @@ export class UI {
         shadowPanel(wp, 300, ph, COL.panel);
         const wl = label(wp, '最终构筑', 22, COL.gold);
         wl.node.setPosition(0, ph / 2 - 26);
+        // tap a weapon or item for its details (same cards as the shop / pause screen)
         run.weapons.forEach((w, i) => {
             const c = this.weaponCell(wp, w, 56);
             c.setPosition(-100 + (i % 3) * 100, ph / 2 - 85 - Math.floor(i / 3) * 66);
+            const def = WEAPON_MAP[w.id];
+            tappable(c, () => this.infoPopup((pp, pw, pph) => {
+                this.card(pp, pw - 20, pph - 20, w.tier, def.sprite, null, def.name + ' ' + TIER_NAMES[w.tier - 1], '武器 · ' + classText(def), weaponLines(def, w.tier, run.stats), true);
+            }, 360, 380));
         });
         run.itemOrder.slice(0, 12).forEach((id, i) => {
-            const c = this.itemCell(wp, ITEM_MAP[id], run.items[id], 36);
+            const it = ITEM_MAP[id];
+            const c = this.itemCell(wp, it, run.items[id], 36);
             c.setPosition(-110 + (i % 6) * 44, ph / 2 - 225 - Math.floor(i / 6) * 42);
+            tappable(c, () => this.infoPopup((pp, pw, pph) => {
+                this.card(pp, pw - 20, pph - 20, it.tier, 'g_' + it.glyph, it.color, it.name + (run.items[id] > 1 ? ` x${run.items[id]}` : ''), '物品', itemLines(it), false);
+            }, 320, 320));
         });
         if (win && !run.endless) {
             const e = button(s, 260, 66, '继续（无尽模式）', COL.purple, () => this.host.continueEndless(), 24);

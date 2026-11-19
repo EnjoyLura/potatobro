@@ -15,7 +15,13 @@ export const BORDER = 160;
 // arena half size; set per stage by World.setArena
 let HALF_W = 900, HALF_H = 575;
 const PLAYER_R = 18;
-const MAX_ENEMIES = 170;
+const MAX_ENEMIES = 190;
+// Global difficulty (V1.6 tuning: more enemies, more health, ramping later in a run)
+const SPAWN_COUNT = 1.25;   // enemies per spawn burst
+const SPAWN_RATE = 0.88;    // spawn interval multiplier (lower = more often)
+const ENEMY_HP = 1.2;       // regular enemy health
+const ELITE_HP = 1.15;      // elites and bosses
+const LATE_HP = 0.02;       // extra health per wave after wave 10 (+2% each)
 
 export interface WorldHost {
     onWaveEnd(): void;
@@ -29,6 +35,14 @@ export interface WorldHost {
 }
 
 const MAX_PARTICLES = 420;
+
+/** Damage numbers: 1234 -> 1.2K, 12345 -> 1.2W (万), 1234567 -> 123W. */
+function shortNum(v: number): string {
+    const f = (x: number) => (x >= 100 ? Math.round(x) : Math.round(x * 10) / 10).toString();
+    if (v >= 10000) return f(v / 10000) + 'W';
+    if (v >= 1000) return f(v / 1000) + 'K';
+    return '' + v;
+}
 
 function parseHex(h: string) {
     const c = hexColor(h);
@@ -513,7 +527,7 @@ export class World {
         const mult = arm >= 0 ? 1 - arm / (arm + 15) : 1 + (-arm) / 15;
         const final = Math.max(1, Math.round(dmg * mult));
         run.hp -= final;
-        this.iframe = 0.4;
+        this.iframe = 0.75; // after a hit: long enough that a crowd cannot shred you in a few frames
         this.flashT = 0.15;
         this.addShake(9);
         this.freeze(0.06);
@@ -590,8 +604,8 @@ export class World {
                 if (this.spawnTimers[i] <= 0) {
                     // spawn faster as the wave goes on
                     const ramp = 1 + elapsed / this.waveDur * 0.6;
-                    this.spawnTimers[i] = r.interval / ramp * rand(0.8, 1.2) * (w >= 20 ? 1.3 : 1);
-                    let n = Math.round((r.group + r.groupW * (w - r.from)) * dangerMul * rand(0.8, 1.25));
+                    this.spawnTimers[i] = r.interval * SPAWN_RATE / ramp * rand(0.8, 1.2) * (w >= 20 ? 1.3 : 1);
+                    let n = Math.round((r.group + r.groupW * (w - r.from)) * dangerMul * SPAWN_COUNT * rand(0.8, 1.25));
                     n = Math.max(1, n);
                     this.spawnGroup(r.type, n);
                 }
@@ -649,9 +663,9 @@ export class World {
         e.x = x; e.y = y;
         const w = run.wave;
         const dd = run.dangerDef;
-        let hp = def.hp + def.hpW * (w - 1);
+        let hp = (def.hp + def.hpW * (w - 1)) * (def.neutral ? 1 : (def.elite ? ELITE_HP : ENEMY_HP) * (1 + Math.max(0, w - 10) * LATE_HP));
         let dmg = def.dmg + def.dmgW * (w - 1);
-        if (def.boss) { hp = def.hp; dmg = def.dmg; }
+        if (def.boss) { hp = def.hp * ELITE_HP; dmg = def.dmg; }
         if (run.endless && w > 20) { const k = 1 + (w - 20) * 0.25; hp *= k * k; dmg *= k; }
         const st = run.stage;
         e.maxHp = e.hp = Math.max(1, Math.round(hp * dd.hpMul * (def.neutral ? 1 : st.enemyHp)));
@@ -1958,7 +1972,7 @@ export class World {
                 for (const o of this.nums) if (o.t > n.t) n = o;
             }
         }
-        const str = (plus ? '+' : '') + Math.round(v) + (crit ? '!' : '');
+        const str = (plus ? '+' : '') + shortNum(Math.round(v));
         n.active = true; n.node.active = true; n.t = 0; n.x = x + rand(-10, 10); n.y = y; n.big = crit;
         n.life = crit ? 0.9 : 0.65;
         const cw = 13;
@@ -1967,7 +1981,7 @@ export class World {
             const s = n.digits[i];
             if (i < str.length) {
                 const ch = str[i];
-                const name = ch === '!' ? 'd_ex' : ch === '+' ? 'd_plus' : 'd_' + ch;
+                const name = ch === '+' ? 'd_plus' : ch === '.' ? 'd_dot' : 'd_' + ch;
                 s.node.active = true;
                 s.spriteFrame = Atlas.get(name);
                 s.node.setPosition(-total / 2 + cw / 2 + i * cw, 0);

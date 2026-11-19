@@ -178,6 +178,9 @@ export function opacity(n: Node, a: number) {
 export function tappable(n: Node, cb: (e: EventTouch) => void) {
     // Only a press that started on this node counts, once: some phone browsers deliver a second
     // release (touch + emulated mouse), which ran the callback and its click sound twice.
+    // A touch listener on a node without UITransform crashes the engine's event sorting
+    // (cameraPriority of null) and freezes all input, so make sure there is one.
+    if (!n.getComponent(UITransform)) n.addComponent(UITransform);
     let pressed = false, lastEnd = 0;
     n.on(Node.EventType.TOUCH_START, () => { pressed = true; });
     n.on(Node.EventType.TOUCH_CANCEL, () => { pressed = false; });

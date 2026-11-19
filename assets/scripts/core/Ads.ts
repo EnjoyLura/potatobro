@@ -19,8 +19,8 @@ const AD_UNITS: { [k in AdSlot]: string } = {
 };
 
 export const AD_TEXT: { [k in AdSlot]: string } = {
-    revive: '看广告复活（恢复 50% 生命，每局一次）',
-    reroll: '看广告免费刷新商店（每波一次）',
+    revive: '看广告复活（恢复 50% 生命，每局两次）',
+    reroll: '看广告免费刷新商店（每波一次）或升级选项（每级一次）',
     crate: '看广告再拿一件同品质物品（每波一次）',
     startBonus: '看广告开局获得额外晶体（每局一次）',
 };

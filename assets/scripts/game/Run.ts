@@ -46,7 +46,8 @@ export class Run {
     endless = false;       // past wave 20
     endlessMode = false;   // started from the stage screen's endless mode (no victory at wave 20)
     // rewarded ads used this run
-    adRevived = false;
+    adRevives = 0;          // ad revives used (max 2 per run)
+    adLevelReroll = -1;     // level whose upgrade choice was rerolled with an ad
     adRerollWave = -1;
     adCrateWave = -1;
 

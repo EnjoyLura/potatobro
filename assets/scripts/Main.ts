@@ -4,6 +4,9 @@ import { Atlas } from './core/Atlas';
 import { registerArt } from './core/Art';
 import { CloudSave } from './core/CloudSave';
 import { Ads } from './core/Ads';
+
+/** Rewarded-ad revives allowed per run. */
+const MAX_AD_REVIVES = 2;
 import { StageDef } from './data/Stages';
 import { Sfx } from './core/Sfx';
 import { Save } from './core/Save';
@@ -192,11 +195,11 @@ export class Main extends Component implements WorldHost, UIHost {
     onPlayerDead() {
         const run = this.runObj;
         // rewarded ad: one revive per run
-        if (!run.adRevived && Ads.visible('revive')) {
+        if (run.adRevives < MAX_AD_REVIVES && Ads.visible('revive')) {
             this.state = 'revive';
             this.ui.resetJoystick();
-            this.ui.showReviveOffer(() => {
-                run.adRevived = true;
+            this.ui.showReviveOffer(MAX_AD_REVIVES - run.adRevives, () => {
+                run.adRevives++;
                 this.world.adRevive();
                 this.state = 'play';
                 this.ui.buildHud();

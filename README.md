@@ -102,7 +102,9 @@ Monster art comes from three sources in `core/Art.ts`: hand-drawn base enemies (
   - Crystal pickups rise in pitch while chained.
   - The BGM streams through an `<audio>` element instead of being decoded into memory. It is muffled with a low-pass filter in the menu, shop and pause screens.
   - If a sample fails to load, that sound stays silent.
-- **Hits**: enemies flash white, squash, and get an impact star plus directional sparks. Crits add a gold ring, a small shake and a bigger number pop.
+- **Hits**: enemies flash white, squash, and get an impact star plus directional sparks. Crits add a gold ring, a small shake and a bigger number pop. Damage numbers abbreviate: 1.2K, 1.2W (万).
+- **Taking damage**: 0.75 s of invulnerability after each hit (the player blinks).
+- **Difficulty tuning** (constants at the top of `game/World.ts`): spawn bursts ×1.25, spawn intervals ×0.88, regular enemy HP ×1.2, elite/boss HP ×1.15, plus 2% enemy HP per wave after wave 10; up to 190 enemies at once.
 - **Kills**: white silhouette pop, glow ring, outlined gibs that arc, bounce and leave droplet stains, plus a ground splat.
 - **Explosions**: flash, fireballs, shock ring, smoke, embers and a scorch mark.
 - **Guns**: directional muzzle flash, tracers, ejected shell casings, and camera recoil kick on heavy weapons. Melee has thrust streaks and a double slash arc.
@@ -111,12 +113,13 @@ Monster art comes from three sources in `core/Art.ts`: hand-drawn base enemies (
 
 ## Ads (reserved)
 
-Rewarded video ads use `tap.createRewardedVideoAd` (`core/Ads.ts`). Ad filing is under review, so the four ad buttons are placeholders: they show, and tapping one says ads are coming soon (no reward).
+Rewarded video ads use `tap.createRewardedVideoAd` (`core/Ads.ts`). Ad filing is under review, so the ad buttons are placeholders: they show, and tapping one says ads are coming soon (no reward).
 
 | Slot | Where | Reward |
 |---|---|---|
-| `revive` | popup after dying | revive with 50% HP, nearby enemies blasted (once per run) |
+| `revive` | popup after dying | revive with 50% HP, nearby enemies blasted (twice per run, `MAX_AD_REVIVES` in Main.ts) |
 | `reroll` | shop header, next to 刷新 | one free shop reroll (once per wave) |
+| `reroll` | level-up screen, next to 刷新 | one free reroll of the upgrade choices (once per level) |
 | `crate` | supply crate screen | take the item plus another of the same quality (once per wave) |
 | `startBonus` | starting weapon screen | +30 crystals at the start (once per run) |
 

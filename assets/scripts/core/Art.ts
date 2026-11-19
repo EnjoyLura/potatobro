@@ -1270,10 +1270,10 @@ export function registerArt() {
         ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
     });
     // digits for damage numbers
-    const chars = '0123456789!+';
+    const chars = '0123456789+KW.';
     for (let i = 0; i < chars.length; i++) {
         const ch = chars[i];
-        Atlas.add('d_' + (ch === '!' ? 'ex' : ch === '+' ? 'plus' : ch), 20, 28, (ctx, w, h) => {
+        Atlas.add('d_' + (ch === '+' ? 'plus' : ch === '.' ? 'dot' : ch), 20, 28, (ctx, w, h) => {
             ctx.font = '900 24px "Arial Black", Arial, sans-serif';
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             ctx.lineJoin = 'round'; ctx.lineWidth = 5; ctx.strokeStyle = OUT;
