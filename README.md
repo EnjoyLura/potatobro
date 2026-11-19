@@ -1,6 +1,6 @@
 # 核芯突围：万械狂潮 CORE RUSH: Overdrive
 
-A landscape mobile arena wave-survival shooter (in the same genre as Brotato), built with **Cocos Creator 3.8.8** and exported to **web-mobile**. All art is generated in code at runtime. Most sound effects are WebAudio synth sounds generated in code. Four use recorded samples in `build-templates/web-mobile/sfx/`: every gun shares one SMG shot (`shot_smg.mp3`), every melee weapon shares one heavy swing (`swing2.mp3`), kills use `kill.wav` and UI clicks use `click.wav`. The battle BGM is `build-templates/web-mobile/bgm/battle.mp3`. The build copies both folders next to `index.html`.
+A landscape mobile arena wave-survival shooter (in the same genre as Brotato), built with **Cocos Creator 3.8.8** and exported to **web-mobile**. All art is generated in code at runtime. Most sound effects are WebAudio synth sounds generated in code. Four use recorded samples in `build-templates/web-mobile/sfx/`: every gun shares one SMG shot (`shot_smg.mp3`), every melee weapon shares one heavy swing (`swing2.mp3`), kills use `kill.wav` (the ordinary-enemy kill sound from S4Game/KingdomWatch, `v24/pierce_heavy.wav`) and UI clicks use `click.wav`. The battle BGM is `build-templates/web-mobile/bgm/battle.mp3`. The build copies both folders next to `index.html`.
 
 ## Build (CLI)
 
@@ -10,7 +10,10 @@ build.bat
 
 `build.bat` runs the Cocos Creator CLI build (`build-web.json`, exit code `36` means success) and then `tools/postbuild.py`, which patches the output:
 
-- **Sharp rendering on phones.** Cocos 3.8 caps devicePixelRatio at 2, so 3x phones render at 2/3 resolution and look blurry. The patch makes the engine read `window.__CR_DPR_CAP()` from the page template instead. That function returns the real ratio up to 3; add `?dpr=2` (or `1`) to the URL to save battery.
+- **Sharp rendering on phones.** Three engine patches, with the hook functions in the page template:
+  - Cocos 3.8 caps devicePixelRatio at 2, so 3x phones render at 2/3 resolution. The engine now reads `window.__CR_DPR_CAP()`, which returns the real ratio up to 4; add `?dpr=2` (or `1`) to the URL to save battery.
+  - Label text is drawn at font size × screen scale, and the engine ignores node scale. Our UI root is scaled up 1.15–1.3× on phones, so all text was stretched and soft. The text assemblers now also multiply by `window.__CR_LABEL_SCALE(label)`: the UI scale (`__CR_TEXT_SCALE`, set in `UI.updateSize`) or the node's world scale, whichever is larger.
+  - The engine caps the drawn font size at 100px; it is raised to 320 so big titles stay sharp.
 - **No Cocos splash.** `splashScreen.totalTime` is set to 0. The page shows its own "加载中" text while loading.
 - **Cache-busting.** The entry script gets `?v=<time>`, so returning visitors load the new build.
 

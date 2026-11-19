@@ -131,7 +131,9 @@ export class World {
         // additive glow layer (flashes, sparks, muzzle, tracers); falls back to normal blending
         this.pools.glow = new SpritePool(this.lGlow, additiveMaterial());
         // floor
-        const canvas = drawArena(AW, AH, BORDER);
+        // floor resolution follows the screen: battle view is zoomed up to 1.15x on phones
+        const floorRes = Math.min(2, Atlas.maxTex / (AW + BORDER * 2), Math.max(1, Atlas.quality * 1.15));
+        const canvas = drawArena(AW, AH, BORDER, floorRes);
         const fn = mkNode('floor', this.lGround);
         const fs = fn.addComponent(Sprite);
         fs.sizeMode = Sprite.SizeMode.CUSTOM;

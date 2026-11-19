@@ -1,9 +1,7 @@
 // Runtime texture atlas: sprites are drawn procedurally with Canvas2D and packed
 // into one (or a few) big textures so that all game sprites batch together.
-import { ImageAsset, Texture2D, SpriteFrame, Rect, Size, Vec2 } from 'cc';
+import { director, ImageAsset, Texture2D, SpriteFrame, Rect, Size, Vec2 } from 'cc';
 
-export const ATLAS_SCALE = 2;      // texture pixels per world unit
-const PAGE = 2048;
 const PAD = 3;
 
 export type DrawFn = (ctx: CanvasRenderingContext2D, w: number, h: number, sil: boolean) => void;
@@ -18,6 +16,12 @@ export class Atlas {
     static sizes: { [name: string]: { w: number; h: number } } = {};
     private static entries: Entry[] = [];
     private static textures: Texture2D[] = [];
+    /** Screen pixels per design unit at startup (view scale: 1 on a 720p desktop, ~1.6 on a 3x phone). */
+    static quality = 1;
+    /** Texture pixels per world unit: 2 on desktops, up to 3 on dense phone screens (UI icons are drawn 1.3x there). */
+    static scale = 2;
+    /** Largest texture the GPU takes (atlas pages and the arena floor stay within it). */
+    static maxTex = 2048;
 
     /** Register a sprite of logical size w×h. If `white` a flash silhouette "<name>_w" is generated too. */
     static add(name: string, w: number, h: number, draw: DrawFn, white = false) {
@@ -32,9 +36,14 @@ export class Atlas {
     }
     static has(name: string) { return !!this.frames[name]; }
 
-    static build() {
+    static build(quality = 1) {
+        this.quality = Math.max(1, quality || 1);
+        const caps = (director.root && director.root.device && director.root.device.capabilities) as { maxTextureSize?: number } | undefined;
+        this.maxTex = (caps && caps.maxTextureSize) || 2048;
+        const S = this.scale = Math.min(3, Math.max(2, Math.ceil(this.quality * 1.3 * 4) / 4));
+        const PAGE = this.maxTex >= 4096 ? 4096 : 2048;
         const list = this.entries.slice();
-        for (const e of list) { e.pw = Math.ceil(e.w * ATLAS_SCALE); e.ph = Math.ceil(e.h * ATLAS_SCALE); }
+        for (const e of list) { e.pw = Math.ceil(e.w * S); e.ph = Math.ceil(e.h * S); }
         list.sort((a, b) => b.ph - a.ph);
         // shelf packing
         let page = 0, x = PAD, y = PAD, shelfH = 0;
@@ -63,14 +72,14 @@ export class Atlas {
             if (!e.sil) {
                 ctx.save();
                 ctx.beginPath(); ctx.rect(e.px, e.py, e.pw, e.ph); ctx.clip();
-                ctx.translate(e.px, e.py); ctx.scale(ATLAS_SCALE, ATLAS_SCALE);
+                ctx.translate(e.px, e.py); ctx.scale(S, S);
                 try { e.draw(ctx, e.w, e.h, false); } catch (err) { console.error('draw fail', e.name, err); }
                 ctx.restore();
             } else {
                 tmp.width = e.pw; tmp.height = e.ph;
                 tctx.save();
                 tctx.clearRect(0, 0, e.pw, e.ph);
-                tctx.scale(ATLAS_SCALE, ATLAS_SCALE);
+                tctx.scale(S, S);
                 try { e.draw(tctx, e.w, e.h, true); } catch (err) { console.error('draw fail', e.name, err); }
                 tctx.restore();
                 tctx.globalCompositeOperation = 'source-in';

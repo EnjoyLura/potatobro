@@ -79,6 +79,8 @@ export class UI {
         const cssH = Math.min(winH, winW * v.h / v.w), cssW = cssH * v.w / v.h;
         this.scale = cssH < 480 ? 1.3 : cssH < 640 ? 1.15 : 1;
         this.root.setScale(this.scale, this.scale, 1);
+        // label text is rendered this much sharper (engine hook from tools/postbuild.py + index.ejs)
+        (window as unknown as { __CR_TEXT_SCALE?: number }).__CR_TEXT_SCALE = this.scale;
         // keep HUD and buttons out of the notch / rounded corners / home indicator
         const ins = safeInsetsCss(winW, winH);
         const k = v.h / cssH / this.scale; // UI units per CSS pixel

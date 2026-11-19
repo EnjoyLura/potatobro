@@ -31,7 +31,7 @@ export class Main extends Component implements WorldHost, UIHost {
         Sfx.setSfxVolume(Save.data.sfxVol);
         Sfx.setMusicVolume(Save.data.musicVol);
         registerArt();
-        Atlas.build();
+        Atlas.build(view.getScaleX()); // texture resolution follows the screen's pixel density
         this.world = new World(this.node, this);
         this.ui = new UI(this.node, this);
         this.world.root.active = true;

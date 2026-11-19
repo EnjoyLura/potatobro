@@ -75,7 +75,7 @@ const Y = (syn: string, bus: string, vol: number, pv: number, gap: number, voice
 let DEFS: { [k: string]: SDef } = {
     gun: S(['shot_smg'], 'weapon', 0.14, 0.08, 0.2, 0.05, 4),
     melee: S(['swing2'], 'weapon', 0.18, 0.08, 0.35, 0.07, 3),
-    kill: S(['kill.wav'], 'kill', 0.32, 0.1, 0.5, 0.045, 4),
+    kill: S(['kill.wav'], 'kill', 0.34, 0.1, 0.5, 0.045, 4),
     rocket: Y('blast', 'weapon', 1, 0.08, 0.1, 2),
     flame: Y('flame', 'weapon', 2.5, 0.08, 0.12, 2),
     sling: Y('sling', 'weapon', 1, 0.08, 0.06, 3),

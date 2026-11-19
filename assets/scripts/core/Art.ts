@@ -838,11 +838,13 @@ export function registerArt() {
 }
 
 // ---------------------------------------------------------------- arena floor
-export function drawArena(W: number, H: number, border: number): HTMLCanvasElement {
+/** `res` = texture pixels per world unit (sharper floor on dense phone screens). */
+export function drawArena(W: number, H: number, border: number, res = 1): HTMLCanvasElement {
     const c = document.createElement('canvas');
     const total = { w: W + border * 2, h: H + border * 2 };
-    c.width = total.w; c.height = total.h;
+    c.width = Math.round(total.w * res); c.height = Math.round(total.h * res);
     const ctx = c.getContext('2d');
+    ctx.scale(res, res);
     // outside darkness
     ctx.fillStyle = '#17121a'; ctx.fillRect(0, 0, total.w, total.h);
     // floor
