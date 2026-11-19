@@ -64,7 +64,9 @@ This opens http://127.0.0.1:8766/tools/sound-lab.html, a page for reviewing and 
 
 - **Movement**: drag anywhere on screen (floating joystick); WASD or arrow keys on desktop. Esc/P pauses.
 - **Weapons fire automatically**: up to 6 weapons orbit your bot and aim at the nearest enemy.
-- **20 waves** (20s, rising to 60s; wave 20 is a 90s boss wave). Elites appear on waves 10 and 15, plus more at higher danger levels. After winning you can keep going in endless mode.
+- **Stages** (`data/Stages.ts`): 荒原虫巢, 冰封裂谷, 熔火工坊 and 虚空星港. Each has its own arena size and floor theme, its own enemy roster, two elites, a boss and modifiers (enemy HP/damage/speed, starting crystals, player stats). 熔火工坊 has lava pools that hurt the player. A stage unlocks when the previous one is cleared; on each stage, difficulty N+1 unlocks after clearing N.
+- **20 waves** (20s, rising to 60s; wave 20 is a 90s boss wave). Elites appear on waves 10 and 15 (two waves earlier on 虚空星港), plus more at higher difficulties. After winning you can keep going in endless mode.
+- **Flow**: menu → stage + difficulty → character → starting weapon.
 - **Crystals**: dropped by enemies, used for both money and XP. Crystals left on the ground at wave end go into a bag, and each later pickup draws one extra from it.
 - **Between waves**: level-up choices (with reroll), then crate items (take or recycle), then the shop.
 - **Shop**: 4 slots, lock, reroll (price rises per reroll), and buy weapons/items. Two copies of a weapon at the same tier combine into the next tier (I–IV). Weapons can be sold.
@@ -76,11 +78,18 @@ This opens http://127.0.0.1:8766/tools/sound-lab.html, a page for reviewing and 
 | Characters (each with its own stats, traits and starting weapons) | 10 |
 | Weapons (4 tiers each: melee thrust/sweep, guns, beam, chain lightning, explosives, flames, turret builder) | 19 |
 | Items (4 rarities, including turrets, mines, drones, gardens, shields, revive, auto-collect) | 55 |
-| Enemy types (chasers, runners, spitters, chargers, splitters, hatchers, bombers, looters, crystal trees) | 11 |
-| Elites + final boss (multi-phase) | 3 |
-| Danger levels | 6 |
+| Enemy types (11 base types + 22 stage variants) | 33 |
+| Elites + bosses (2 elites and a multi-phase boss per stage) | 12 |
+| Stages | 4 |
+| Difficulty levels (per stage) | 6 |
 
-Progress (best wave, wins per character and danger, settings) is saved in localStorage.
+Stage enemies are recolored copies of the base drawings (`EnemyDef.art`: target hue, saturation, lightness, plus an ice / lava / void overlay), drawn into the atlas at startup.
+
+## Codex, saves and cloud save
+
+- **Codex (图鉴)**: weapons, items and monsters with filters and details. Weapons and items count as discovered once seen in the shop, a crate or the weapon select; monsters once they spawn (kill counts are kept). Undiscovered entries show as silhouettes. Old saves get the first stage's monsters up to their best wave.
+- **Save**: localStorage. Settings stay on the device; progress (best wave, wins, stage clears, runs, kills, play time, codex) is the part that syncs. `savedAt` changes only when progress changes.
+- **TapTap cloud save** (`core/CloudSave.ts`): inside the TapTap app the global `tap` object is available (no SDK). One archive, `core_rush_save`, holds the progress JSON: it is written with `tap.getFileSystemManager().writeFile` and uploaded with `createArchive` / `updateArchive`. Uploads are limited to one per minute, so they are queued. At startup the archive is downloaded and compared with local progress. If they differ and this device has its own progress, a popup lets the player keep one; a device without progress takes the cloud copy silently. The 存档 screen in the menu shows both saves. In a normal browser it says cloud save is only available in TapTap.
 
 ## Feel and effects
 
@@ -104,8 +113,9 @@ Progress (best wave, wins per character and danger, settings) is saved in localS
 assets/scenes/main.scene      Canvas + Main component
 assets/scripts/Main.ts        entry point, game state machine
 assets/scripts/core/          Atlas (runtime texture packing), Art (procedural sprites),
-                              Sfx (synth + samples + music), Save, Nodes, Util
-assets/scripts/data/          Stats, Weapons, Items, Characters, Enemies, Upgrades
+                              Sfx (synth + samples + music), Save, CloudSave (TapTap), Nodes, Util
+assets/scripts/data/          Stats, Weapons, Items, Characters, Enemies, Stages, Upgrades
 assets/scripts/game/          Run (economy/inventory/shop), World (simulation)
-assets/scripts/ui/            UIKit, Text, UI (all screens)
+assets/scripts/ui/            UIKit, Text, UI (menu, settings, character/weapon select, HUD, shop,
+                              pause, results), StageUI, CodexUI, SaveUI
 ```

@@ -3,6 +3,8 @@
 import { Atlas } from './Atlas';
 import { CHARACTERS, CharDef } from '../data/Characters';
 import { TAU } from './Util';
+import { ENEMIES, EnemyArt } from '../data/Enemies';
+import { ArenaTheme } from '../data/Stages';
 
 const OUT = '#231a26';
 type C2D = CanvasRenderingContext2D;
@@ -628,6 +630,92 @@ const GLYPHS: { [k: string]: (ctx: C2D) => void } = {
 export const GLYPH_NAMES = Object.keys(GLYPHS);
 
 // ---------------------------------------------------------------- registration
+// ---------------------------------------------------------------- stage enemy variants
+function rgb2hsl(r: number, g: number, b: number): number[] {
+    r /= 255; g /= 255; b /= 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+    if (mx === mn) return [0, 0, l];
+    const d = mx - mn, s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+    const h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return [h * 60, s, l];
+}
+function hsl2rgb(h: number, s: number, l: number): number[] {
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+    const f = (t: number) => {
+        t = ((t % 1) + 1) % 1;
+        if (t < 1 / 6) return p + (q - p) * 6 * t;
+        if (t < 0.5) return q;
+        if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+        return p;
+    };
+    return [f(h / 360 + 1 / 3) * 255, f(h / 360) * 255, f(h / 360 - 1 / 3) * 255];
+}
+
+/** Draws `d` off-screen, moves its colored pixels to the target hue, then adds the stage overlay. */
+function drawVariant(ctx: C2D, d: (ctx: C2D, w: number, h: number, sil: boolean) => void, w: number, h: number, art: EnemyArt) {
+    const S = Atlas.scale;
+    const c = document.createElement('canvas');
+    c.width = Math.ceil(w * S); c.height = Math.ceil(h * S);
+    const x = c.getContext('2d');
+    x.scale(S, S);
+    d(x, w, h, false);
+    const img = x.getImageData(0, 0, c.width, c.height), px = img.data;
+    const satMul = art.sat === undefined ? 1 : art.sat, lAdd = art.light || 0;
+    for (let i = 0; i < px.length; i += 4) {
+        if (px[i + 3] === 0) continue;
+        const hsl = rgb2hsl(px[i], px[i + 1], px[i + 2]);
+        const ss = hsl[1], ll = hsl[2];
+        // keep outlines, eyes, teeth and highlights; recolor the body
+        if (ss < 0.22 || ll < 0.13 || ll > 0.93) continue;
+        const o = hsl2rgb(art.hue, Math.min(1, ss * satMul), Math.max(0.05, Math.min(0.92, ll + lAdd)));
+        px[i] = o[0]; px[i + 1] = o[1]; px[i + 2] = o[2];
+    }
+    x.putImageData(img, 0, 0);
+    ctx.drawImage(c, 0, 0, w, h);
+    if (art.overlay) drawOverlay(ctx, art.overlay, w, h);
+}
+
+function drawOverlay(ctx: C2D, kind: 'ice' | 'lava' | 'void', w: number, h: number) {
+    const cx = w / 2, cy = h * 0.55, k = Math.min(w, h) / 60;
+    if (kind === 'ice') {
+        // ice shards on the head and shoulders
+        const shard = (x: number, y: number, s: number, a: number) => {
+            ctx.save(); ctx.translate(x, y); ctx.rotate(a);
+            poly(ctx, [0, -s, s * 0.45, 0, 0, s * 0.35, -s * 0.45, 0], '#e8f7ff', OUT, 1.6 * k);
+            poly(ctx, [0, -s, s * 0.45, 0, 0, 0], '#ffffff', undefined);
+            ctx.restore();
+        };
+        shard(cx - 9 * k, cy - 16 * k, 7 * k, -0.4);
+        shard(cx + 1 * k, cy - 20 * k, 8 * k, 0.05);
+        shard(cx + 10 * k, cy - 15 * k, 6 * k, 0.45);
+    } else if (kind === 'lava') {
+        // glowing cracks
+        ctx.save();
+        ctx.lineCap = 'round';
+        const crack = (pts: number[]) => {
+            ctx.beginPath(); ctx.moveTo(cx + pts[0] * k, cy + pts[1] * k);
+            for (let i = 2; i < pts.length; i += 2) ctx.lineTo(cx + pts[i] * k, cy + pts[i + 1] * k);
+            ctx.strokeStyle = 'rgba(255,90,20,0.9)'; ctx.lineWidth = 3.2 * k; ctx.stroke();
+            ctx.strokeStyle = '#ffe08a'; ctx.lineWidth = 1.3 * k; ctx.stroke();
+        };
+        crack([-14, 4, -9, 8, -11, 13]);
+        crack([10, 2, 14, 7, 11, 12]);
+        crack([-3, 13, 2, 16]);
+        ctx.restore();
+    } else {
+        // void: faint glow ring and floating sparks
+        ctx.save();
+        ctx.strokeStyle = 'rgba(120,240,255,0.55)'; ctx.lineWidth = 1.6 * k;
+        ctx.beginPath(); ctx.ellipse(cx, cy + 2 * k, 24 * k, 22 * k, 0, 0, TAU); ctx.stroke();
+        const sparks = [[-18, -14, 2.4], [17, -10, 2], [12, 16, 1.8], [-15, 14, 1.6]];
+        for (const sp of sparks) {
+            circ(ctx, cx + sp[0] * k, cy + sp[1] * k, sp[2] * k + 1.5, 'rgba(120,240,255,0.35)');
+            circ(ctx, cx + sp[0] * k, cy + sp[1] * k, sp[2] * k * 0.6, '#d8fdff');
+        }
+        ctx.restore();
+    }
+}
+
 export function registerArt() {
     // characters
     for (const c of CHARACTERS) {
@@ -637,6 +725,18 @@ export function registerArt() {
     for (const k in ENEMY_DRAW) {
         const e = ENEMY_DRAW[k];
         Atlas.add(k, e.w, e.h, e.d, true);
+    }
+    // stage variants: recolored copies of the drawings above plus an ice / lava / void overlay
+    for (const id in ENEMIES) {
+        const def = ENEMIES[id];
+        if (!def.art || ENEMY_DRAW[def.sprite]) continue;
+        const base = ENEMY_DRAW[def.art.base];
+        if (!base) { console.warn('[Art] missing base drawing', def.art.base); continue; }
+        const art = def.art;
+        Atlas.add(def.sprite, base.w, base.h, (ctx, w, h, sil) => {
+            if (sil) { base.d(ctx, w, h, true); return; }
+            drawVariant(ctx, base.d, w, h, art);
+        }, true);
     }
     // weapons
     for (const k in WEAPON_DRAW) {
@@ -838,32 +938,51 @@ export function registerArt() {
 }
 
 // ---------------------------------------------------------------- arena floor
-/** `res` = texture pixels per world unit (sharper floor on dense phone screens). */
-export function drawArena(W: number, H: number, border: number, res = 1): HTMLCanvasElement {
+/**
+ * Arena floor texture. `res` = texture pixels per world unit (sharper floor on dense phone screens).
+ * `pools` are lava pools (world coordinates, origin at the arena center, y up).
+ */
+export function drawArena(W: number, H: number, border: number, res: number, th: ArenaTheme, pools: { x: number; y: number; r: number }[] = []): HTMLCanvasElement {
     const c = document.createElement('canvas');
     const total = { w: W + border * 2, h: H + border * 2 };
     c.width = Math.round(total.w * res); c.height = Math.round(total.h * res);
     const ctx = c.getContext('2d');
     ctx.scale(res, res);
     // outside darkness
-    ctx.fillStyle = '#17121a'; ctx.fillRect(0, 0, total.w, total.h);
+    ctx.fillStyle = th.outside; ctx.fillRect(0, 0, total.w, total.h);
     // floor
     const x0 = border, y0 = border;
     const grd = ctx.createRadialGradient(total.w / 2, total.h / 2, 100, total.w / 2, total.h / 2, Math.max(W, H) * 0.7);
-    grd.addColorStop(0, '#8a7560'); grd.addColorStop(1, '#6e5b4a');
+    grd.addColorStop(0, th.floor[0]); grd.addColorStop(1, th.floor[1]);
     ctx.fillStyle = grd; ctx.fillRect(x0, y0, W, H);
-    // mottled patches
     let seed = 1234;
     const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    // mottled patches
     for (let i = 0; i < 90; i++) {
         const px = x0 + rnd() * W, py = y0 + rnd() * H, r = 30 + rnd() * 90;
-        ctx.fillStyle = rnd() < 0.5 ? 'rgba(60,45,35,0.08)' : 'rgba(255,240,210,0.05)';
+        ctx.fillStyle = rnd() < 0.5 ? th.patch[0] : th.patch[1];
         ctx.beginPath(); ctx.ellipse(px, py, r, r * (0.5 + rnd() * 0.5), rnd() * 3, 0, TAU); ctx.fill();
+    }
+    if (th.deco === 'grid') {
+        // void harbor: faint deck plating
+        ctx.strokeStyle = 'rgba(120,200,255,0.07)'; ctx.lineWidth = 2;
+        for (let gx = x0; gx <= x0 + W; gx += 120) { ctx.beginPath(); ctx.moveTo(gx, y0); ctx.lineTo(gx, y0 + H); ctx.stroke(); }
+        for (let gy = y0; gy <= y0 + H; gy += 120) { ctx.beginPath(); ctx.moveTo(x0, gy); ctx.lineTo(x0 + W, gy); ctx.stroke(); }
+    }
+    if (th.deco === 'ice') {
+        // frozen rift: cracks in the ice
+        ctx.strokeStyle = 'rgba(70,120,160,0.35)'; ctx.lineWidth = 2;
+        for (let i = 0; i < 26; i++) {
+            let px = x0 + rnd() * W, py = y0 + rnd() * H;
+            ctx.beginPath(); ctx.moveTo(px, py);
+            for (let k = 0; k < 4; k++) { px += (rnd() - 0.5) * 120; py += (rnd() - 0.5) * 120; ctx.lineTo(px, py); }
+            ctx.stroke();
+        }
     }
     // specks
     for (let i = 0; i < 2600; i++) {
         const px = x0 + rnd() * W, py = y0 + rnd() * H;
-        ctx.fillStyle = rnd() < 0.7 ? 'rgba(45,35,30,0.35)' : 'rgba(255,240,220,0.15)';
+        ctx.fillStyle = rnd() < 0.7 ? th.speck[0] : th.speck[1];
         const s = 1 + rnd() * 2.2;
         ctx.fillRect(px, py, s, s);
     }
@@ -872,18 +991,44 @@ export function drawArena(W: number, H: number, border: number, res = 1): HTMLCa
         const px = x0 + 10 + rnd() * (W - 20), py = y0 + 10 + rnd() * (H - 20);
         const r = 2 + rnd() * 4;
         ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.beginPath(); ctx.ellipse(px + 1, py + 2, r, r * 0.7, 0, 0, TAU); ctx.fill();
-        ctx.fillStyle = rnd() < 0.5 ? '#9b8a78' : '#5f5247';
+        ctx.fillStyle = rnd() < 0.5 ? th.pebble[0] : th.pebble[1];
         ctx.beginPath(); ctx.ellipse(px, py, r, r * 0.7, 0, 0, TAU); ctx.fill();
         ctx.lineWidth = 1.2; ctx.strokeStyle = 'rgba(35,26,38,0.7)'; ctx.stroke();
     }
-    // tufts of alien grass
+    // tufts: grass / ice crystals / embers / glowing nodes
     for (let i = 0; i < 140; i++) {
         const px = x0 + 10 + rnd() * (W - 20), py = y0 + 10 + rnd() * (H - 20);
-        ctx.strokeStyle = 'rgba(48,40,52,0.8)'; ctx.lineWidth = 2; ctx.lineCap = 'round';
-        const n = 2 + Math.floor(rnd() * 3);
-        for (let k = 0; k < n; k++) {
-            ctx.beginPath(); ctx.moveTo(px + k * 3 - 3, py); ctx.lineTo(px + k * 3 - 3 + (rnd() - 0.5) * 6, py - 5 - rnd() * 6); ctx.stroke();
+        if (th.deco === 'grass') {
+            ctx.strokeStyle = th.tuft; ctx.lineWidth = 2; ctx.lineCap = 'round';
+            const n = 2 + Math.floor(rnd() * 3);
+            for (let k = 0; k < n; k++) {
+                ctx.beginPath(); ctx.moveTo(px + k * 3 - 3, py); ctx.lineTo(px + k * 3 - 3 + (rnd() - 0.5) * 6, py - 5 - rnd() * 6); ctx.stroke();
+            }
+        } else if (th.deco === 'ice') {
+            const s = 4 + rnd() * 5;
+            poly(ctx, [px, py - s * 1.6, px + s * 0.6, py, px, py + s * 0.3, px - s * 0.6, py], th.tuft, 'rgba(40,70,100,0.6)', 1.2);
+        } else if (th.deco === 'ember') {
+            circ(ctx, px, py, 1.5 + rnd() * 2, th.tuft);
+        } else {
+            circ(ctx, px, py, 3 + rnd() * 2, 'rgba(110,240,255,0.12)');
+            circ(ctx, px, py, 1.2 + rnd(), th.tuft);
         }
+    }
+    // lava pools (molten forge)
+    for (const p of pools) {
+        const px = total.w / 2 + p.x, py = total.h / 2 - p.y; // world y is up, canvas y is down
+        const lg = ctx.createRadialGradient(px, py, p.r * 0.15, px, py, p.r);
+        lg.addColorStop(0, '#fff2a8'); lg.addColorStop(0.35, '#ffb02e'); lg.addColorStop(0.8, '#ff4d17'); lg.addColorStop(1, '#a3200f');
+        ctx.beginPath();
+        for (let k = 0; k <= 18; k++) {
+            const a = k / 18 * TAU, rr2 = p.r * (0.9 + 0.1 * Math.sin(a * 3 + p.x));
+            const qx = px + Math.cos(a) * rr2, qy = py + Math.sin(a) * rr2;
+            if (k === 0) ctx.moveTo(qx, qy); else ctx.lineTo(qx, qy);
+        }
+        ctx.closePath();
+        ctx.fillStyle = lg; ctx.fill();
+        ctx.lineWidth = 6; ctx.strokeStyle = '#2a1410'; ctx.stroke();
+        ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,200,90,0.6)'; ctx.stroke();
     }
     // cliff border: jagged dark rim
     ctx.save();
@@ -899,11 +1044,11 @@ export function drawArena(W: number, H: number, border: number, res = 1): HTMLCa
     ctx.moveTo(pts[0][0], pts[0][1]);
     for (const p of pts) ctx.lineTo(p[0], p[1]);
     ctx.closePath();
-    ctx.fillStyle = '#2a1d24';
+    ctx.fillStyle = th.rim;
     ctx.fill('evenodd');
     ctx.restore();
     ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (const p of pts) ctx.lineTo(p[0], p[1]); ctx.closePath();
-    ctx.lineWidth = 4; ctx.strokeStyle = '#5a2f35'; ctx.stroke();
+    ctx.lineWidth = 4; ctx.strokeStyle = shade(th.rim, 0.22); ctx.stroke();
     // inner shadow
     const ig = 40;
     const sides: [number, number, number, number, number, number, number, number][] = [
@@ -912,7 +1057,7 @@ export function drawArena(W: number, H: number, border: number, res = 1): HTMLCa
     ];
     for (const s of sides) {
         const g = ctx.createLinearGradient(s[4], s[5], s[6], s[7]);
-        g.addColorStop(0, 'rgba(20,10,15,0.45)'); g.addColorStop(1, 'rgba(20,10,15,0)');
+        g.addColorStop(0, 'rgba(10,5,10,0.45)'); g.addColorStop(1, 'rgba(10,5,10,0)');
         ctx.fillStyle = g; ctx.fillRect(s[0], s[1], s[2], s[3]);
     }
     return c;

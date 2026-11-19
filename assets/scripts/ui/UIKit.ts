@@ -1,24 +1,45 @@
 // UI construction helpers: vector panels (Graphics), labels, buttons, bars, icons.
-import { Node, Graphics, Label, UITransform, Color, EventTouch, Sprite, tween, Vec3, UIOpacity } from 'cc';
+import { Node, Graphics, Label, UITransform, Color, EventTouch, EventMouse, Sprite, tween, Vec3, UIOpacity, Mask } from 'cc';
 import { mkNode, mkSprite, hexColor, setTint } from '../core/Nodes';
 import { Sfx } from '../core/Sfx';
 
 export const COL = {
-    bg: '#1c1620',
-    panel: '#2b2230',
-    panel2: '#3a2f40',
-    stroke: '#120d14',
-    text: '#f5efe6',
-    dim: '#a99db0',
+    bg: '#15151b',
+    panel: '#0d0d12',      // dark translucent panels (drawn with PANEL_A alpha)
+    panel2: '#1a1b22',
+    cell: '#2a2c34',       // grid cells
+    cellLine: '#3f434d',
+    stroke: '#0a0a0d',
+    text: '#f5f3ee',
+    dim: '#9a9aa6',
     good: '#7dff8a',
     bad: '#ff6b6b',
-    gold: '#ffd166',
+    gold: '#ffc93c',
     mat: '#69f0ae',
     accent: '#ff8a3d',
     blue: '#4fc3f7',
-    btn: '#ff8a3d',
-    btnDark: '#4a3d52',
+    btn: '#f8c331',        // primary action (yellow, dark text)
+    btnDark: '#3a3d48',
+    red: '#e8352c',
+    green: '#3f9a57',
+    purple: '#7e57c2',
+    pillBack: '#56688a',   // "返回" pill
+    dark: '#1a1206',       // text on yellow
 };
+export const PANEL_A = 215;
+
+/** Dark text on light fills, white text on dark fills. */
+export function textOn(fill: string) {
+    const c = fill.replace('#', '');
+    const r = parseInt(c.substr(0, 2), 16), g = parseInt(c.substr(2, 2), 16), b = parseInt(c.substr(4, 2), 16);
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.62 ? COL.dark : '#ffffff';
+}
+function shadeHex(hex: string, amt: number) {
+    const c = hex.replace('#', '');
+    const f = (i: number) => Math.round(Math.max(0, Math.min(255, parseInt(c.substr(i, 2), 16) * (1 + amt))));
+    const h = (v: number) => ('0' + v.toString(16)).slice(-2);
+    return '#' + h(f(0)) + h(f(2)) + h(f(4));
+}
 
 const colorCache: { [k: string]: Color } = {};
 export function C(hex: string, a = 255): Color {
@@ -47,7 +68,7 @@ export function drawRR(g: Graphics, w: number, h: number, fill: string, stroke?:
     }
 }
 
-export function panel(parent: Node, w: number, h: number, fill = COL.panel, stroke = COL.stroke, r = 16, lw = 4, fillA = 255): Node {
+export function panel(parent: Node, w: number, h: number, fill = COL.panel, stroke: string | undefined = undefined, r = 16, lw = 3, fillA = PANEL_A): Node {
     const n = mkNode('panel', parent);
     size(n, w, h);
     const g = n.addComponent(Graphics);
@@ -56,11 +77,8 @@ export function panel(parent: Node, w: number, h: number, fill = COL.panel, stro
     return n;
 }
 
-export function shadowPanel(parent: Node, w: number, h: number, fill = COL.panel, stroke = COL.stroke, r = 16): Node {
-    const s = panel(parent, w, h, '#000000', undefined, r, 0, 90);
-    s.setPosition(0, -6);
-    const n = panel(parent, w, h, fill, stroke, r, 4);
-    return n;
+export function shadowPanel(parent: Node, w: number, h: number, fill = COL.panel, stroke: string | undefined = undefined, r = 18): Node {
+    return panel(parent, w, h, fill, stroke, r, 3, fill === COL.panel ? PANEL_A : 245);
 }
 
 export interface LabelOpts { bold?: boolean; outline?: number; outlineColor?: string; align?: 'left' | 'center' | 'right'; width?: number; lineH?: number; vAlign?: 'top' | 'center' | 'bottom'; anchorX?: number; anchorY?: number }
@@ -96,24 +114,35 @@ export function setLabelColor(l: Label, hex: string) { l.color = C(hex); }
 
 export interface Btn { node: Node; label: Label; g: Graphics; w: number; h: number; color: string; enabled: boolean; setColor(c: string): void; setEnabled(e: boolean): void; setText(t: string): void }
 
-export function button(parent: Node, w: number, h: number, text: string, color: string, cb: () => void, fontSize = 26, textColor = '#ffffff'): Btn {
+export function button(parent: Node, w: number, h: number, text: string, color: string, cb: () => void, fontSize = 26, textColor?: string): Btn {
     const n = mkNode('btn', parent);
     size(n, w, h);
     const sh = mkNode('sh', n);
     const sg = sh.addComponent(Graphics);
-    drawRR(sg, w, h, '#000000', undefined, Math.min(16, h / 3), 0, 110);
-    sh.setPosition(0, -5);
+    const rad = Math.min(12, h / 4);
+    drawRR(sg, w, h, '#000000', undefined, rad, 0, 90);
+    sh.setPosition(0, -4);
     const body = mkNode('body', n);
     const g = body.addComponent(Graphics);
-    const l = label(body, text, fontSize, textColor);
+    const tc = textColor || textOn(color);
+    const l = label(body, text, fontSize, tc, tc === COL.dark ? { outline: 0 } : { outline: Math.max(2, Math.round(fontSize / 12)) });
     const b: Btn = {
         node: n, label: l, g, w, h, color, enabled: true,
         setColor(c: string) {
             b.color = c;
-            drawRR(g, w, h, c, COL.stroke, Math.min(16, h / 3), 4);
-            g.fillColor = C('#ffffff', 40);
-            g.roundRect(-w / 2 + 6, h / 2 - h * 0.42, w - 12, h * 0.32, Math.min(10, h / 5));
-            g.fill();
+            g.clear();
+            g.fillColor = C(COL.stroke);
+            g.roundRect(-w / 2, -h / 2, w, h, rad); g.fill();
+            // darker bottom edge, then the face
+            g.fillColor = C(shadeHex(c, -0.3));
+            g.roundRect(-w / 2 + 3, -h / 2 + 3, w - 6, h - 6, rad - 2); g.fill();
+            g.fillColor = C(c);
+            g.roundRect(-w / 2 + 3, -h / 2 + 3 + Math.max(4, h * 0.1), w - 6, h - 6 - Math.max(4, h * 0.1), rad - 2); g.fill();
+            if (!textColor) {
+                const t = textOn(c);
+                l.color = C(t);
+                l.enableOutline = t !== COL.dark;
+            }
         },
         setEnabled(e: boolean) { b.enabled = e; b.setColor(e ? b.color : b.color); body.getComponent(UITransform); n.getComponent(UITransform); l.node.setScale(1, 1, 1); opacity(n, e ? 255 : 140); },
         setText(t: string) { l.string = t; },
@@ -147,7 +176,17 @@ export function opacity(n: Node, a: number) {
 
 /** Makes a node tappable with a callback (no visuals). */
 export function tappable(n: Node, cb: (e: EventTouch) => void) {
-    n.on(Node.EventType.TOUCH_END, (e: EventTouch) => { Sfx.unlock(); cb(e); Sfx.tap(); });
+    // Only a press that started on this node counts, once: some phone browsers deliver a second
+    // release (touch + emulated mouse), which ran the callback and its click sound twice.
+    let pressed = false, lastEnd = 0;
+    n.on(Node.EventType.TOUCH_START, () => { pressed = true; });
+    n.on(Node.EventType.TOUCH_CANCEL, () => { pressed = false; });
+    n.on(Node.EventType.TOUCH_END, (e: EventTouch) => {
+        const now = Date.now();
+        if (!pressed || now - lastEnd < 80) return;
+        pressed = false; lastEnd = now;
+        Sfx.unlock(); cb(e); Sfx.tap();
+    });
 }
 
 /** A short, nearly still tap (not a drag or a hold). Shared by the click-on-empty-space handlers. */
@@ -325,6 +364,80 @@ export function toggle(parent: Node, get: () => boolean, set: (v: boolean) => vo
         txt.color = C(on ? COL.mat : COL.dim);
     };
     draw();
-    n.on(Node.EventType.TOUCH_END, () => { Sfx.unlock(); set(!get()); draw(); Sfx.click(); });
+    let pressed = false;
+    n.on(Node.EventType.TOUCH_START, () => { pressed = true; });
+    n.on(Node.EventType.TOUCH_CANCEL, () => { pressed = false; });
+    n.on(Node.EventType.TOUCH_END, () => {
+        if (!pressed) return;
+        pressed = false;
+        Sfx.unlock(); set(!get()); draw(); Sfx.click();
+    });
     return n;
+}
+
+/** Pill used for tabs and filters: yellow with dark text when selected, black otherwise. */
+export function tab(parent: Node, w: number, h: number, text: string, selected: boolean, cb: () => void, fontSize?: number, color?: string): Btn {
+    return pill(parent, w, h, text, cb, {
+        fontSize: fontSize || Math.round(h * 0.44),
+        fill: selected ? COL.btn : '#08080b', fillA: selected ? 255 : 235,
+        textColor: selected ? COL.dark : (color || '#ffffff'),
+    });
+}
+
+/** Small rounded filter chip. */
+export function chip(parent: Node, text: string, selected: boolean, cb: () => void, color = '#ffffff', fontSize = 18): Btn {
+    const w = Math.max(56, text.length * fontSize + 22), h = Math.round(fontSize * 1.75);
+    return pill(parent, w, h, text, cb, {
+        fontSize, fill: selected ? COL.btn : '#1d1e25', fillA: 255,
+        textColor: selected ? COL.dark : color,
+    });
+}
+
+/** Grid cell (codex / character grid): dark tile, colored bar at the bottom, yellow frame when selected. */
+export function cellBg(g: Graphics, w: number, h: number, selected: boolean, bar?: string) {
+    g.clear();
+    if (selected) {
+        g.fillColor = C(COL.btn);
+        g.roundRect(-w / 2 - 4, -h / 2 - 4, w + 8, h + 8, 14); g.fill();
+    }
+    g.fillColor = C('#16171c');
+    g.roundRect(-w / 2, -h / 2, w, h, 11); g.fill();
+    g.fillColor = C(COL.cell);
+    g.roundRect(-w / 2 + 3, -h / 2 + 3, w - 6, h - 6, 9); g.fill();
+    g.lineWidth = 2; g.strokeColor = C(COL.cellLine);
+    g.roundRect(-w / 2 + 3, -h / 2 + 3, w - 6, h - 6, 9); g.stroke();
+    if (bar) {
+        g.fillColor = C(bar);
+        g.roundRect(-w / 2 + 8, -h / 2 + 6, w - 16, 4, 2); g.fill();
+    }
+}
+
+export interface ScrollArea { node: Node; content: Node; setHeight(h: number): void; moved(): boolean; scrollTo(y: number): void }
+/**
+ * Vertically scrolling, clipped area. Put children in `content` with y going down from h/2 (the top edge),
+ * then call setHeight(total). Drag or mouse wheel scrolls; moved() tells taps apart from drags.
+ */
+export function scrollArea(parent: Node, w: number, h: number): ScrollArea {
+    const n = mkNode('scroll', parent);
+    size(n, w, h);
+    const m = n.addComponent(Mask);
+    m.type = Mask.Type.GRAPHICS_RECT;
+    const content = mkNode('content', n);
+    let total = h, y = 0, startY = 0, lastY = 0, moved = false;
+    const clampY = (v: number) => Math.max(0, Math.min(Math.max(0, total - h), v));
+    const apply = () => content.setPosition(0, y);
+    n.on(Node.EventType.TOUCH_START, (e: EventTouch) => { startY = lastY = e.getUILocation().y; moved = false; });
+    n.on(Node.EventType.TOUCH_MOVE, (e: EventTouch) => {
+        const p = e.getUILocation().y;
+        if (Math.abs(p - startY) > 12) moved = true;
+        if (moved) { y = clampY(y + (p - lastY) / Math.max(0.01, n.worldScale.y)); apply(); }
+        lastY = p;
+    });
+    n.on(Node.EventType.MOUSE_WHEEL, (e: EventMouse) => { y = clampY(y - e.getScrollY() * 0.6); apply(); });
+    return {
+        node: n, content,
+        setHeight(v: number) { total = Math.max(h, v); y = clampY(y); apply(); },
+        moved() { return moved; },
+        scrollTo(v: number) { y = clampY(v); apply(); },
+    };
 }

@@ -5,6 +5,7 @@ import { WEAPONS, WEAPON_MAP, WeaponDef, WEAPON_CLASSES } from '../data/Weapons'
 import { ITEMS, ITEM_MAP, ItemDef } from '../data/Items';
 import { UPGRADES, UpgradeDef } from '../data/Upgrades';
 import { DANGERS } from '../data/Enemies';
+import { StageDef, STAGES } from '../data/Stages';
 import { chance, pick, shuffle, weightedPick } from '../core/Util';
 
 export interface OwnedWeapon { id: string; tier: number; uid: number }
@@ -17,6 +18,7 @@ const WEAPON_TIER_PRICE = [1, 1.9, 3.6, 6.5];
 
 export class Run {
     char: CharDef;
+    stage: StageDef = STAGES[0];
     danger = 0;
     wave = 1;
     mats = 0;
@@ -43,9 +45,11 @@ export class Run {
     won = false;
     endless = false;
 
-    constructor(char: CharDef, weaponId: string, danger: number) {
+    constructor(char: CharDef, weaponId: string, danger: number, stage: StageDef = STAGES[0]) {
         this.char = char;
         this.danger = danger;
+        this.stage = stage;
+        this.mats = stage.startMats;
         this.weapons.push({ id: weaponId, tier: Math.max(1, WEAPON_MAP[weaponId].minTier || 1), uid: UID++ });
         if (char.startItems) for (const id of char.startItems) this.addItem(id);
         this.recompute();
@@ -59,6 +63,7 @@ export class Run {
         const s = emptyStats();
         s.maxHp = 10;
         addMods(s, this.char.mods);
+        if (this.stage.playerMods) addMods(s, this.stage.playerMods);
         addMods(s, this.bonus);
         s.maxHp += this.level;
         for (const id in this.items) addMods(s, ITEM_MAP[id].mods, this.items[id]);

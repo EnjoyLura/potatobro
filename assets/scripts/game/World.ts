@@ -7,10 +7,13 @@ import { Sfx } from '../core/Sfx';
 import { TAU, clamp, rand, randInt, chance, dist2, angleDiff, SpatialGrid, pick, lerp } from '../core/Util';
 import { Run } from './Run';
 import { WEAPON_MAP, WeaponDef } from '../data/Weapons';
-import { ENEMIES, EnemyDef, SPAWN_RULES, elitesForWave, waveDuration } from '../data/Enemies';
+import { ENEMIES, EnemyDef, waveDuration } from '../data/Enemies';
+import { StageDef, STAGES, elitesForWave, endlessElites, lavaPools } from '../data/Stages';
+import { Save } from '../core/Save';
 
-export const AW = 1800, AH = 1150, BORDER = 160;
-const HALF_W = AW / 2, HALF_H = AH / 2;
+export const BORDER = 160;
+// arena half size; set per stage by World.setArena
+let HALF_W = 900, HALF_H = 575;
 const PLAYER_R = 18;
 const MAX_ENEMIES = 170;
 
@@ -131,23 +134,41 @@ export class World {
         // additive glow layer (flashes, sparks, muzzle, tracers); falls back to normal blending
         this.pools.glow = new SpritePool(this.lGlow, additiveMaterial());
         // floor
-        // floor resolution follows the screen: battle view is zoomed up to 1.15x on phones
-        const floorRes = Math.min(2, Atlas.maxTex / (AW + BORDER * 2), Math.max(1, Atlas.quality * 1.15));
-        const canvas = drawArena(AW, AH, BORDER, floorRes);
         const fn = mkNode('floor', this.lGround);
         const fs = fn.addComponent(Sprite);
         fs.sizeMode = Sprite.SizeMode.CUSTOM;
-        fs.spriteFrame = Atlas.frameFromCanvas(canvas);
-        fn.getComponent(UITransform).setContentSize(AW + BORDER * 2, AH + BORDER * 2);
         this.floor = fs;
+        this.setArena(STAGES[0]);
         // player
         this.playerSpr = mkSprite(this.lPlayer, 'c_unit');
         this.root.active = false;
     }
 
+    // ================================================================ arena
+    stage: StageDef = null;
+    lava: { x: number; y: number; r: number }[] = [];
+    private lavaT = 0;
+
+    /** Repaints the floor for a stage (size, colors, lava pools). */
+    setArena(st: StageDef) {
+        if (this.stage === st) return;
+        this.stage = st;
+        HALF_W = st.aw / 2; HALF_H = st.ah / 2;
+        this.lava = lavaPools(st);
+        const tw = st.aw + BORDER * 2, th = st.ah + BORDER * 2;
+        // floor resolution follows the screen: battle view is zoomed up to 1.15x on phones
+        const floorRes = Math.min(2, Atlas.maxTex / Math.max(tw, th), Math.max(1, Atlas.quality * 1.15));
+        const canvas = drawArena(st.aw, st.ah, BORDER, floorRes, st.theme, this.lava);
+        const old = this.floor.spriteFrame;
+        this.floor.spriteFrame = Atlas.frameFromCanvas(canvas);
+        this.floor.node.getComponent(UITransform).setContentSize(tw, th);
+        if (old && old.texture) old.texture.destroy();
+    }
+
     // ================================================================ wave lifecycle
     beginRun(run: Run) {
         this.run = run;
+        this.setArena(run.stage);
         this.reviveLeft = run.special.revive || 0;
         this.clearAll(true);
         this.root.active = true;
@@ -185,7 +206,8 @@ export class World {
         this.hitStop = 0; this.slowT = 0; this.kickX = 0; this.kickY = 0;
         this.waveDur = run.endless ? 60 : waveDuration(run.wave);
         this.waveTime = this.waveDur;
-        this.spawnTimers = SPAWN_RULES.map((r, i) => 0.6 + i * 0.4);
+        this.spawnTimers = run.stage.rules.map((r, i) => 0.6 + i * 0.4);
+        this.lavaT = 0;
         this.eliteSpawned = false;
         this.shieldLeft = run.special.shield || 0;
         this.mineTimer = 3; this.gardenTimer = 5; this.treeTimer = rand(4, 10);
@@ -290,6 +312,7 @@ export class World {
             this.updateBullets(dt);
             this.updatePickups(dt);
             this.waveTime -= dt;
+            this.updateLava(dt);
             if (this.waveTime <= 0 && !this.dead) {
                 this.waveTime = 0;
                 this.endWave();
@@ -302,6 +325,20 @@ export class World {
         this.updateNums(dt);
         this.updateCamera(realDt);
         this.renderPlayer(dt);
+    }
+
+    /** Molten forge: standing in a lava pool hurts (armor and dodge apply as usual). */
+    updateLava(dt: number) {
+        if (!this.lava.length || this.dead) return;
+        this.lavaT -= dt;
+        if (this.lavaT > 0) return;
+        for (const p of this.lava) {
+            if (dist2(this.px, this.py, p.x, p.y) < (p.r - 12) * (p.r - 12)) {
+                this.lavaT = 0.9;
+                this.hurtPlayer(Math.max(1, Math.round(1 + this.run.wave * 0.15)));
+                return;
+            }
+        }
     }
 
     // ================================================================ player
@@ -475,8 +512,9 @@ export class World {
         const elapsed = this.waveDur - this.waveTime;
         // stop spawning regular enemies in the last 1.5 seconds
         if (this.waveTime > 1.5) {
-            for (let i = 0; i < SPAWN_RULES.length; i++) {
-                const r = SPAWN_RULES[i];
+            const rules = run.stage.rules;
+            for (let i = 0; i < rules.length; i++) {
+                const r = rules[i];
                 if (w < r.from) continue;
                 this.spawnTimers[i] -= dt;
                 if (this.spawnTimers[i] <= 0) {
@@ -492,12 +530,13 @@ export class World {
         // elites at the start of the wave
         if (!this.eliteSpawned && elapsed > 2) {
             this.eliteSpawned = true;
-            const elites = run.endless ? (run.wave % 5 === 0 ? ['boss'] : ['juggernaut', 'queen'].slice(0, 1 + (run.wave % 2))) : elitesForWave(run.wave, run.danger);
+            const elites = run.endless ? endlessElites(run.stage, run.wave) : elitesForWave(run.stage, run.wave, run.danger);
             for (const id of elites) this.spawnGroup(id, 1, true);
             if (elites.length) {
-                if (elites.indexOf('boss') >= 0) Sfx.bossRoar(); else Sfx.eliteAlarm();
+                const hasBoss = elites.some(id => ENEMIES[id].boss);
+                if (hasBoss) Sfx.bossRoar(); else Sfx.eliteAlarm();
                 this.addShake(8);
-                this.host.onElite(elites.indexOf('boss') >= 0 ? '首领来袭！' : '精英来袭！');
+                this.host.onElite(hasBoss ? '首领来袭！' : '精英来袭！');
             }
         }
         // trees
@@ -544,9 +583,11 @@ export class World {
         let dmg = def.dmg + def.dmgW * (w - 1);
         if (def.boss) { hp = def.hp; dmg = def.dmg; }
         if (run.endless && w > 20) { const k = 1 + (w - 20) * 0.25; hp *= k * k; dmg *= k; }
-        e.maxHp = e.hp = Math.max(1, Math.round(hp * dd.hpMul));
-        e.dmg = Math.max(def.neutral ? 0 : 1, Math.round(dmg * dd.dmgMul));
-        e.speed = def.speed * rand(0.9, 1.1);
+        const st = run.stage;
+        e.maxHp = e.hp = Math.max(1, Math.round(hp * dd.hpMul * (def.neutral ? 1 : st.enemyHp)));
+        e.dmg = Math.max(def.neutral ? 0 : 1, Math.round(dmg * dd.dmgMul * st.enemyDmg));
+        e.speed = def.speed * rand(0.9, 1.1) * st.enemySpeed;
+        Save.seeEnemy(def.id);
         e.r = def.r;
         e.phase = rand(0, TAU);
         e.timer = rand(1, 3);
@@ -645,7 +686,7 @@ export class World {
                     if (e.timer <= 0) {
                         e.timer = rand(3.5, 5);
                         if (this.enemies.length < MAX_ENEMIES) {
-                            const c = this.spawnEnemyNow('grub', e.x + rand(-20, 20), e.y + rand(-20, 20));
+                            const c = this.spawnEnemyNow(e.def.child || 'grub', e.x + rand(-20, 20), e.y + rand(-20, 20));
                             c.kbx = rand(-200, 200); c.kby = rand(-200, 200);
                         }
                     }
@@ -776,7 +817,8 @@ export class World {
             for (let i = 0; i < 4; i++) {
                 if (this.enemies.length >= MAX_ENEMIES + 10) break;
                 const a = i / 4 * TAU;
-                this.spawnEnemyNow(i % 2 ? 'runner' : 'spitter', e.x + Math.cos(a) * 70, e.y + Math.sin(a) * 70);
+                const sm = e.def.summon || ['runner', 'spitter'];
+                this.spawnEnemyNow(i % 2 ? sm[0] : sm[1], e.x + Math.cos(a) * 70, e.y + Math.sin(a) * 70);
             }
         }
     }
@@ -806,7 +848,7 @@ export class World {
             e.vx = e.dirX * 700; e.vy = e.dirY * 700;
             if (e.stateT <= 0) {
                 e.state = 0;
-                for (let i = 0; i < 4; i++) if (this.enemies.length < MAX_ENEMIES + 10) this.spawnEnemyNow(enraged ? 'charger' : 'grub', e.x + rand(-80, 80), e.y + rand(-80, 80));
+                for (let i = 0; i < 4; i++) if (this.enemies.length < MAX_ENEMIES + 10) this.spawnEnemyNow((e.def.summon || ['charger', 'grub'])[enraged ? 0 : 1], e.x + rand(-80, 80), e.y + rand(-80, 80));
             }
         } else if (e.state === 3) { // spiral
             e.vx = nx * s * 0.3; e.vy = ny * s * 0.3;
@@ -951,6 +993,7 @@ export class World {
         Sfx.kill(e.def.elite || e.r >= 30);
         if (silent) return;
         if (e.def.ai !== 'tree' && e.def.ai !== 'looter') run.kills++;
+        Save.killEnemy(e.def.id);
         // drops
         let mats = e.def.mats;
         if (run.special.goldKill && chance(run.special.goldKill / 100)) mats++;
@@ -972,7 +1015,7 @@ export class World {
         if (e.def.ai === 'splitter') {
             const n = run.wave >= 12 ? 3 : 2;
             for (let i = 0; i < n; i++) {
-                const c = this.spawnEnemyNow('mini', e.x + rand(-10, 10), e.y + rand(-10, 10));
+                const c = this.spawnEnemyNow(e.def.child || 'mini', e.x + rand(-10, 10), e.y + rand(-10, 10));
                 const a = i / n * TAU;
                 c.kbx = Math.cos(a) * 300; c.kby = Math.sin(a) * 300;
             }
@@ -997,6 +1040,7 @@ export class World {
     }
 
     enemyColor(def: EnemyDef): number[] {
+        if (def.color) return def.color;
         switch (def.id) {
             case 'grub': return [126, 87, 194];
             case 'runner': return [224, 82, 151];

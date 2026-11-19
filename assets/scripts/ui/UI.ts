@@ -6,11 +6,15 @@ import { Sfx } from '../core/Sfx';
 import { Save } from '../core/Save';
 import {
     COL, C, panel, shadowPanel, label, button, Btn, blocker, bar, Bar, icon, iconFit, popIn, clearChildren, size, opacity, tappable, tapSound, drawRR,
-    pill, slider, toggle,
+    pill, slider, toggle, cellBg,
 } from './UIKit';
+import { STAGES, StageDef } from '../data/Stages';
+import { showStageSelect } from './StageUI';
+import { showCodex } from './CodexUI';
+import { showSaves, showCloudConflict } from './SaveUI';
 
 /** Shown on the main menu and settings screen; bump with each release (see changelogPopup). */
-export const VERSION = 'V1.3';
+export const VERSION = 'V1.4';
 import { itemLines, weaponLines, classText, tierColor, statValueText, Line } from './Text';
 import { CHARACTERS, CharDef } from '../data/Characters';
 import { WEAPON_MAP, WEAPON_CLASSES, TIER_NAMES, TIER_BG, TIER_COLORS, WeaponDef } from '../data/Weapons';
@@ -20,7 +24,8 @@ import { DANGERS, MAX_WAVE } from '../data/Enemies';
 import { Run, MAX_WEAPONS, UpgradeOption } from '../game/Run';
 
 export interface UIHost {
-    startRun(c: CharDef, weaponId: string, danger: number): void;
+    startRun(c: CharDef, weaponId: string, danger: number, stage: StageDef): void;
+    previewStage(st: StageDef): void;
     nextWave(): void;
     resume(): void;
     quitToMenu(): void;
@@ -53,6 +58,9 @@ export class UI {
     selChar: CharDef = CHARACTERS[0];
     selWeapon = '';
     selDanger = 0;
+    selStage: StageDef = STAGES[0];
+    /** Which full screen is showing (rebuilt on resize / cloud save changes). */
+    screenName = '';
 
     constructor(parent: Node, host: UIHost) {
         this.host = host;
@@ -164,6 +172,7 @@ export class UI {
      */
     showMenu() {
         this.inSettings = false;
+        this.screenName = 'menu';
         this.updateSize();
         this.clearScreen();
         this.hideHud();
@@ -216,7 +225,7 @@ export class UI {
         const bw = Math.min(400, colW - 10), bh = Math.round(Math.max(54, Math.min(76, H * 0.11)));
         const gap = Math.round(bh * 0.24);
         const items: [string, () => void, string][] = [
-            ['开始游戏', () => this.showCharSelect(), COL.gold],
+            ['开始游戏', () => this.showStageSelect(), COL.gold],
             ['设置', () => this.showSettings(false), '#ffffff'],
         ];
         if (screen.supportsFullScreen) {
@@ -239,8 +248,8 @@ export class UI {
         ver.node.setPosition(colX, Math.max(this.B + 22, by + bh / 2 - 6));
 
         // top right: secondary pills
-        const tw = 150, th = 52;
-        const tops: [string, () => void][] = [['玩法', () => this.howToPopup()], ['战绩', () => this.recordsPopup()], ['更新日志', () => this.changelogPopup()]];
+        const tw = Math.min(150, (this.W - colW - 120) / 4 - 14), th = 52;
+        const tops: [string, () => void][] = [['玩法', () => this.howToPopup()], ['图鉴', () => this.showCodex()], ['存档', () => this.showSaves()], ['更新日志', () => this.changelogPopup()]];
         tops.forEach(([txt, cb], i) => {
             const b = pill(s, tw, th, txt, cb, { fontSize: 22 });
             b.node.setPosition(this.R - tw / 2 - 20 - (tops.length - 1 - i) * (tw + 14), this.T - th / 2 - 16);
@@ -251,6 +260,22 @@ export class UI {
         const rw = Math.min(this.R - artL - 20, 470);
         const rec = pill(s, rw, 46, recTxt, () => this.recordsPopup(), { fontSize: 18, textColor: COL.dim });
         rec.node.setPosition(this.R - rw / 2 - 20, this.B + 23 + 16);
+    }
+
+    showStageSelect() { showStageSelect(this); }
+    showCodex() { showCodex(this); }
+    showSaves() { showSaves(this); }
+    showCloudConflict() { showCloudConflict(this); }
+    /** Rebuild the current menu-side screen (after a resize or a cloud save change). */
+    refreshScreen() {
+        switch (this.screenName) {
+            case 'menu': this.showMenu(); break;
+            case 'saves': this.showSaves(); break;
+            case 'stage': this.showStageSelect(); break;
+            case 'codex': this.showCodex(); break;
+            case 'char': this.showCharSelect(); break;
+            case 'loadout': this.showLoadout(); break;
+        }
     }
 
     // ================================================================ settings
@@ -267,6 +292,7 @@ export class UI {
             blocker(s, 215);
         } else {
             this.inSettings = true;
+            this.screenName = 'settings';
             this.clearScreen();
             this.hideHud();
             s = this.screen;
@@ -340,116 +366,135 @@ export class UI {
 
     recordsPopup() {
         const d = Save.data;
-        const lines = [`最高波次  ${d.bestWave}`, `总局数  ${d.runs}`, `总击杀  ${d.kills}`, '', '各机体最高通关难度：'];
+        const lines = [`最高波次  ${d.bestWave}`, `总局数  ${d.runs}`, `总击杀  ${d.kills}`, `战斗时长  ${Math.floor(d.playTime / 60)} 分钟`, '', '各关卡最高通关难度：'];
+        for (const st of STAGES) {
+            const lv = Save.stageLevel(st.id);
+            lines.push(`  ${st.name}  ·  ${lv >= 0 ? DANGERS[lv].name : '未通关'}`);
+        }
+        lines.push('', '各机体最高通关难度：');
         let any = false;
         for (const c of CHARACTERS) {
             const lv = Save.winLevel(c.id);
             if (lv >= 0) { lines.push(`  ${c.name}  ·  ${DANGERS[lv].name}`); any = true; }
         }
         if (!any) lines.push('  还没有通关记录');
-        this.textPopup('战绩', lines.join('\n'), 460, 440);
+        this.textPopup('战绩', lines.join('\n'), 480, 560);
     }
 
     changelogPopup() {
         this.textPopup('更新日志', [
-            `${VERSION}  屏幕适配：手机竖握自动横屏、刘海屏避让、平板与带鱼屏；手机画面更清晰；新菜单与设置（音量滑条）。`,
+            `${VERSION}  关卡：荒原虫巢、冰封裂谷、熔火工坊、虚空星港，各有场地、怪物、精英与首领；难度逐级解锁。图鉴（武器、物品、怪物）。TapTap 云存档。全新界面风格。`,
+            'V1.3  屏幕适配：手机竖握自动横屏、刘海屏避让、平板与带鱼屏；手机画面更清晰；新菜单与设置（音量滑条）。',
             'V1.2  音效精简：枪械与近战统一音色，击杀与点击换新音效，其余回归经典合成音；战斗 BGM。',
             'V1.1  打击感：命中停顿、爆炸与碎片特效、录音音效。',
             `V1.0  首个版本：${Object.keys(WEAPON_MAP).length} 种武器、${CHARACTERS.length} 种机体、${MAX_WAVE} 波 + 无尽模式。`,
-        ].join('\n\n'), 620, 420);
+        ].join('\n\n'), 640, 460);
     }
 
     // ================================================================ character select
     showCharSelect() {
         this.updateSize();
         this.clearScreen();
+        this.screenName = 'char';
         const s = this.screen;
-        const dim = mkNode('dim', s); const dg = dim.addComponent(Graphics); dg.fillColor = C('#0f0b12', 200); dg.rect(-this.W, -this.H, this.W * 2, this.H * 2); dg.fill();
-        const t = label(s, '选择机体', 46, COL.gold, { outline: 6 });
-        t.node.setPosition(0, this.T - 46);
-        const back = button(s, 120, 54, '返回', COL.btnDark, () => this.showMenu(), 24);
-        back.node.setPosition(this.L + 85, this.T - 46);
+        const dim = mkNode('dim', s); const dg = dim.addComponent(Graphics); dg.fillColor = C('#08080c', 150); dg.rect(-this.W, -this.H, this.W * 2, this.H * 2); dg.fill();
+        tappable(dim, () => { });
+        const t = label(s, '选择机体', 44, '#ffffff', { outline: 5 });
+        t.node.setPosition(0, this.T - 36);
+        const st = label(s, `${this.selStage.name}  ·  ${DANGERS[this.selDanger].name}`, 20, COL.gold, { outline: 3 });
+        st.node.setPosition(0, this.T - 76);
 
-        const detailW = 420;
-        const gridW = this.W - detailW - 60;
-        const cols = 5;
-        const cw = Math.min(150, (gridW - (cols - 1) * 14) / cols), ch = cw * 1.1;
-        const gx0 = this.L + 30 + cw / 2;
-        const gy0 = this.T - 130 - ch / 2;
+        const top = this.T - 100, bottom = this.B + 92;
+        const areaH = top - bottom, cy = (top + bottom) / 2;
+        const detailW = Math.min(440, this.W * 0.4);
+        const gridW = this.W - detailW - 48;
+        const gp = panel(s, gridW, areaH, '#000000', undefined, 18, 0, 200);
+        gp.setPosition(this.L + 16 + gridW / 2, cy);
         const detail = mkNode('detail', s);
-        detail.setPosition(this.R - detailW / 2 - 24, this.H < 650 ? 0 : -30);
-        const cards: { c: CharDef; g: Graphics; w: number; h: number }[] = [];
-        const redraw = () => {
-            for (const cd of cards) drawRR(cd.g, cd.w, cd.h, cd.c === this.selChar ? '#5a4565' : COL.panel, cd.c === this.selChar ? COL.gold : COL.stroke, 14, cd.c === this.selChar ? 5 : 4);
-        };
+        detail.setPosition(this.R - 16 - detailW / 2, cy);
+        const cols = 5;
+        const cw = Math.min(140, (gridW - 40 - (cols - 1) * 14) / cols);
+        const ch = Math.min(cw * 1.12, (areaH - 40 - 14) / 2);
+        const gx0 = -gridW / 2 + 20 + cw / 2 + (gridW - 40 - cols * cw - (cols - 1) * 14) / 2;
+        const gy0 = areaH / 2 - 20 - ch / 2;
+        const cards: { c: CharDef; g: Graphics }[] = [];
+        const redraw = () => { for (const cd of cards) cellBg(cd.g, cw, ch, cd.c === this.selChar, Save.winLevel(cd.c.id) >= 0 ? COL.mat : undefined); };
         CHARACTERS.forEach((c, i) => {
             const col = i % cols, row = Math.floor(i / cols);
-            const n = mkNode('card', s);
+            const n = mkNode('card', gp);
             size(n, cw, ch);
-            n.setPosition(gx0 + col * (cw + 14), gy0 - row * (ch + 16));
+            n.setPosition(gx0 + col * (cw + 14), gy0 - row * (ch + 14));
             const g = n.addComponent(Graphics);
-            cards.push({ c, g, w: cw, h: ch });
-            const sp = mkSprite(n, 'c_' + c.id, cw * 0.62, cw * 0.62 * 78 / 72);
+            cards.push({ c, g });
+            const sp = mkSprite(n, 'c_' + c.id, cw * 0.6, cw * 0.6 * 78 / 72);
             sp.node.setPosition(0, 10);
-            const nm = label(n, c.name, 20, COL.text);
-            nm.node.setPosition(0, -ch / 2 + 18);
+            const nm = label(n, c.name, 19, '#ffffff', { outline: 3 });
+            nm.node.setPosition(0, -ch / 2 + 20);
             const win = Save.winLevel(c.id);
             if (win >= 0) {
-                const cr = icon(n, 'g_crown', 26, 26, DANGERS[win].color);
+                const cr = icon(n, 'g_crown', 24, 24, DANGERS[win].color);
                 cr.node.setPosition(cw / 2 - 18, ch / 2 - 18);
             }
-            tappable(n, () => { Sfx.click(); this.selChar = c; redraw(); this.charDetail(detail, detailW); });
-            popIn(n, i * 0.02);
+            tappable(n, () => { this.selChar = c; redraw(); this.charDetail(detail, detailW, areaH); });
         });
         redraw();
-        this.charDetail(detail, detailW);
-        const go = button(s, 260, 68, '下一步', COL.btn, () => { this.selWeapon = this.selChar.weapons[0]; this.showLoadout(); }, 32);
-        go.node.setPosition(this.R - detailW / 2 - 24, this.B + 48);
+        this.charDetail(detail, detailW, areaH);
+        const back = button(s, Math.min(230, this.W * 0.2), 62, '返回', COL.red, () => this.showStageSelect(), 28);
+        back.node.setPosition(this.L + 16 + back.w / 2, this.B + 44);
+        const go = button(s, Math.min(250, this.W * 0.21), 62, '下一步', COL.btn, () => { this.selWeapon = this.selChar.weapons[0]; this.showLoadout(); }, 30);
+        go.node.setPosition(this.R - 16 - go.w / 2, this.B + 44);
     }
 
-    charDetail(parent: Node, w: number) {
+    charDetail(parent: Node, w: number, h: number) {
         clearChildren(parent);
         const c = this.selChar;
-        const h = Math.min(470, this.H - 190);
-        shadowPanel(parent, w, h, COL.panel);
-        const sp = mkSprite(parent, 'c_' + c.id, 100, 108);
-        sp.node.setPosition(-w / 2 + 70, h / 2 - 70);
-        const nm = label(parent, c.name, 34, COL.gold, { align: 'left' });
-        nm.node.setPosition(-w / 2 + 135, h / 2 - 50);
-        const tt = label(parent, c.title, 20, COL.dim, { align: 'left' });
-        tt.node.setPosition(-w / 2 + 135, h / 2 - 88);
-        let y = h / 2 - 150;
+        panel(parent, w, h, '#000000', undefined, 18, 0, 200);
+        const box = mkNode('box', parent); const bg = box.addComponent(Graphics);
+        cellBg(bg, 100, 100, false, Save.winLevel(c.id) >= 0 ? COL.mat : undefined);
+        box.setPosition(-w / 2 + 22 + 50, h / 2 - 22 - 50);
+        mkSprite(box, 'c_' + c.id, 76, 82);
+        const nm = label(parent, c.name, 32, '#ffffff', { align: 'left', outline: 0 });
+        nm.node.setPosition(-w / 2 + 140, h / 2 - 44);
+        const tt = label(parent, c.title, 18, COL.dim, { align: 'left', outline: 0 });
+        tt.node.setPosition(-w / 2 + 140, h / 2 - 78);
+        const win = Save.winLevel(c.id);
+        const wl = label(parent, win >= 0 ? `最高通关：${DANGERS[win].name}` : '尚未通关', 17, win >= 0 ? DANGERS[win].color : COL.dim, { align: 'left', outline: 0 });
+        wl.node.setPosition(-w / 2 + 140, h / 2 - 104);
+        const sep = mkNode('sep', parent); const sg = sep.addComponent(Graphics);
+        sg.fillColor = C('#ffffff', 30); sg.rect(-w / 2 + 22, h / 2 - 134, w - 44, 2); sg.fill();
+        let y = h / 2 - 156;
         const lines: Line[] = [];
         for (const k in c.mods) { const v = (c.mods as any)[k]; lines.push({ t: modText(k, v), c: statIsGood(k, v) ? COL.good : COL.bad }); }
-        for (const tr of c.traits) lines.push({ t: '• ' + tr, c: COL.text });
+        for (const tr of c.traits) lines.push({ t: '• ' + tr, c: '#ffffff' });
         if (!lines.length) lines.push({ t: '无', c: COL.dim });
+        const step = Math.min(30, (h - 170) / lines.length);
         for (const ln of lines) {
-            const l = label(parent, ln.t, 22, ln.c, { align: 'left', width: w - 50 });
+            const l = label(parent, ln.t, step < 26 ? 17 : 19, ln.c, { align: 'left', width: w - 50, outline: 0 });
             l.node.setPosition(-w / 2 + 25, y);
             l.updateRenderData(true);
-            y -= Math.max(32, l.node.getComponent(UITransform).height + 6);
+            y -= Math.max(step, l.node.getComponent(UITransform).height + 4);
         }
-        const win = Save.winLevel(c.id);
-        const wl = label(parent, win >= 0 ? `最高通关：${DANGERS[win].name}` : '尚未通关', 20, win >= 0 ? DANGERS[win].color : COL.dim, { align: 'left' });
-        wl.node.setPosition(-w / 2 + 25, -h / 2 + 30);
     }
 
-    // ================================================================ loadout (weapon + danger)
+    // ================================================================ loadout (starting weapon)
     showLoadout() {
         this.clearScreen();
+        this.screenName = 'loadout';
         const s = this.screen;
         const c = this.selChar;
-        const dim = mkNode('dim', s); const dg = dim.addComponent(Graphics); dg.fillColor = C('#0f0b12', 200); dg.rect(-this.W, -this.H, this.W * 2, this.H * 2); dg.fill();
-        const t = label(s, '选择初始武器', 44, COL.gold, { outline: 6 });
-        t.node.setPosition(0, this.T - 46);
-        const back = button(s, 120, 54, '返回', COL.btnDark, () => this.showCharSelect(), 24);
-        back.node.setPosition(this.L + 85, this.T - 46);
+        const dim = mkNode('dim', s); const dg = dim.addComponent(Graphics); dg.fillColor = C('#08080c', 150); dg.rect(-this.W, -this.H, this.W * 2, this.H * 2); dg.fill();
+        tappable(dim, () => { });
+        const t = label(s, '选择初始武器', 44, '#ffffff', { outline: 5 });
+        t.node.setPosition(0, this.T - 36);
+        const st = label(s, `${this.selStage.name}  ·  ${DANGERS[this.selDanger].name}  ·  ${c.name}`, 20, COL.gold, { outline: 3 });
+        st.node.setPosition(0, this.T - 76);
         const ws = c.weapons;
-        const cw = Math.min(190, (this.W - 120 - (ws.length - 1) * 14) / ws.length), ch = Math.min(250, Math.round(this.H * 0.42));
+        for (const id of ws) Save.seeWeapon(id);
+        const cw = Math.min(196, (this.W - 60 - (ws.length - 1) * 14) / ws.length), ch = Math.min(330, this.H - 220);
         const x0 = -((ws.length - 1) * (cw + 14)) / 2;
-        const cardY = this.T - 90 - ch / 2;
+        const cardY = (this.T - 100 + this.B + 92) / 2;
         const cards: { id: string; g: Graphics }[] = [];
-        const redraw = () => { for (const cd of cards) drawRR(cd.g, cw, ch, cd.id === this.selWeapon ? '#5a4565' : COL.panel, cd.id === this.selWeapon ? COL.gold : COL.stroke, 14, cd.id === this.selWeapon ? 5 : 4); };
+        const redraw = () => { for (const cd of cards) cellBg(cd.g, cw, ch, cd.id === this.selWeapon, WEAPON_MAP[cd.id].melee ? '#ff8a5c' : '#4fc3f7'); };
         ws.forEach((id, i) => {
             const def = WEAPON_MAP[id];
             const tier = def.minTier || 1;
@@ -462,37 +507,24 @@ export class UI {
             ic.node.setPosition(0, ch / 2 - 55);
             const nm = label(n, def.name, 22, tierColor(tier));
             nm.node.setPosition(0, ch / 2 - 110);
-            const cl = label(n, classText(def), 16, COL.dim);
+            const cl = label(n, (def.melee ? '近战 · ' : '远程 · ') + classText(def), 15, COL.dim, { outline: 2 });
             cl.node.setPosition(0, ch / 2 - 138);
-            const lines = weaponLines(def, tier, null).slice(0, ch > 240 ? 4 : 3);
-            lines.forEach((ln, k) => {
-                const l = label(n, ln.t, 15, ln.c, { outline: 2, width: cw - 10 });
-                l.node.setPosition(0, ch / 2 - 165 - k * 22);
+            const lines = weaponLines(def, tier, null).slice(0, ch > 280 ? 5 : 3);
+            let ly = ch / 2 - 162;
+            lines.forEach((ln) => {
+                const l = label(n, ln.t, 15, ln.c, { outline: 2, width: cw - 14, anchorY: 1, lineH: 19 });
+                l.node.setPosition(0, ly + 8);
+                l.updateRenderData(true);
+                ly -= l.node.getComponent(UITransform).height + 3;
             });
-            tappable(n, () => { Sfx.click(); this.selWeapon = id; redraw(); });
+            tappable(n, () => { this.selWeapon = id; redraw(); });
             popIn(n, i * 0.03);
         });
         redraw();
-        // danger
-        const dy = this.T - 90 - ch - 30;
-        const dt = label(s, '选择危险等级', 28, COL.text, { outline: 4 });
-        dt.node.setPosition(0, dy);
-        const desc = label(s, '', 20, COL.dim, { outline: 3 });
-        desc.node.setPosition(0, dy - 98);
-        const btns: Btn[] = [];
-        const upd = () => {
-            btns.forEach((b, i) => b.setColor(i === this.selDanger ? DANGERS[i].color : COL.btnDark));
-            desc.string = DANGERS[this.selDanger].desc;
-        };
-        const bw = Math.min(150, (this.W - 100) / 6 - 10);
-        DANGERS.forEach((d, i) => {
-            const b = button(s, bw, 60, d.name, COL.btnDark, () => { this.selDanger = i; upd(); }, 22);
-            b.node.setPosition((i - 2.5) * (bw + 10), dy - 52);
-            btns.push(b);
-        });
-        upd();
-        const go = button(s, 300, 66, '出发！', COL.btn, () => this.host.startRun(this.selChar, this.selWeapon, this.selDanger), 36);
-        go.node.setPosition(0, this.B + 42);
+        const back = button(s, Math.min(230, this.W * 0.2), 62, '返回', COL.red, () => this.showCharSelect(), 28);
+        back.node.setPosition(this.L + 16 + back.w / 2, this.B + 44);
+        const go = button(s, Math.min(250, this.W * 0.21), 62, '出发！', COL.btn, () => this.host.startRun(this.selChar, this.selWeapon, this.selDanger, this.selStage), 30);
+        go.node.setPosition(this.R - 16 - go.w / 2, this.B + 44);
     }
 
     // ================================================================ HUD
@@ -692,7 +724,7 @@ export class UI {
     infoPopup(build: (p: Node, w: number, h: number) => void, w = 420, h = 360) {
         const b = blocker(this.popup, 120);
         const p = mkNode('pop', this.popup);
-        shadowPanel(p, w, h, COL.panel2, COL.gold);
+        shadowPanel(p, w, h, COL.panel2, '#3a3c47');
         build(p, w, h);
         popIn(p);
         const close = () => { b.destroy(); p.destroy(); };
@@ -735,7 +767,7 @@ export class UI {
                 });
             });
             const cost = Math.max(1, Math.round(run.wave * 0.6)) + rerolls * Math.max(1, Math.round(run.wave * 0.4));
-            const rb = button(s, 230, 64, `刷新 ◆${cost}`, run.mats >= cost ? '#4f8a5b' : COL.btnDark, () => {
+            const rb = button(s, 230, 64, `刷新 ◆${cost}`, run.mats >= cost ? COL.green : COL.btnDark, () => {
                 if (run.mats < cost) { Sfx.deny(); return; }
                 run.mats -= cost; rerolls++; Sfx.reroll(); build();
             }, 26);
@@ -776,6 +808,7 @@ export class UI {
         blocker(s, 200);
         const rarity = tier >= 2 ? Math.max(3, run.rollTier(0.15)) : run.rollTier(0.05);
         const it = run.randomItem(Math.min(4, rarity));
+        Save.seeItem(it.id);
         const t = label(s, tier >= 2 ? '精英宝箱！' : '发现补给箱！', 46, COL.gold, { outline: 6 });
         t.node.setPosition(0, this.T - 56);
         if (run.crates.length > 0) {
@@ -788,7 +821,7 @@ export class UI {
         const recycle = Math.max(1, Math.round(run.itemPrice(it.id) * 0.35));
         const take = button(s, 200, 70, '拿取', COL.btn, () => { run.addItem(it.id); Sfx.buy(); onDone(); }, 30);
         take.node.setPosition(-115, this.B + 55);
-        const rec = button(s, 200, 70, `回收 ◆${recycle}`, '#4f8a5b', () => { run.mats += recycle; Sfx.sell(); onDone(); }, 26);
+        const rec = button(s, 200, 70, `回收 ◆${recycle}`, COL.green, () => { run.mats += recycle; Sfx.sell(); onDone(); }, 26);
         rec.node.setPosition(115, this.B + 55);
     }
 
@@ -857,6 +890,7 @@ export class UI {
         const buildCards = () => {
             clearChildren(cards);
             run.shop.forEach((slot, i) => {
+                if (slot.kind === 'weapon') Save.seeWeapon(slot.id); else Save.seeItem(slot.id);
                 const x = areaL + cw / 2 + i * (cw + 14);
                 const y = this.T - 66 - ch / 2;
                 if (slot.sold) {
@@ -881,7 +915,7 @@ export class UI {
                 n.setPosition(x, y);
                 const afford = run.mats >= slot.price;
                 const canAdd = slot.kind === 'weapon' ? run.canAddWeapon(slot.id, slot.tier) : run.canTakeItem(ITEM_MAP[slot.id]);
-                const bb = button(n, cw - 76, 50, `◆ ${slot.price}`, afford && canAdd ? '#4f8a5b' : COL.btnDark, () => {
+                const bb = button(n, cw - 76, 50, `◆ ${slot.price}`, afford && canAdd ? COL.green : COL.btnDark, () => {
                     if (!afford) { Sfx.deny(); this.toast('晶体不足', COL.bad, 0, 28); return; }
                     if (!canAdd) { Sfx.deny(); this.toast(slot.kind === 'weapon' ? '武器栏已满' : '无法携带更多', COL.bad, 0, 28); return; }
                     if (run.buy(i)) { Sfx.buy(); refreshAll(); }
@@ -896,7 +930,7 @@ export class UI {
             // reroll
             if (rerollBtn) rerollBtn.node.destroy();
             const rp = run.rerollPrice();
-            rerollBtn = button(s, 210, 56, rp === 0 ? '免费刷新' : `刷新 ◆${rp}`, run.mats >= rp ? '#4f8a5b' : COL.btnDark, () => {
+            rerollBtn = button(s, 210, 56, rp === 0 ? '免费刷新' : `刷新 ◆${rp}`, run.mats >= rp ? COL.green : COL.btnDark, () => {
                 if (!run.doReroll()) { Sfx.deny(); return; }
                 Sfx.reroll(); refreshAll();
             }, 24);
@@ -979,13 +1013,13 @@ export class UI {
             const c = this.card(p, pw - 20, ph - 110, w.tier, def.sprite, null, def.name + ' ' + TIER_NAMES[w.tier - 1], '武器 · ' + classText(def), weaponLines(def, w.tier, run.stats), true);
             c.setPosition(0, 40);
             const canC = run.canCombine(idx);
-            const cb = button(p, 150, 56, '合成', canC ? '#7e57c2' : COL.btnDark, () => {
+            const cb = button(p, 150, 56, '合成', canC ? COL.purple : COL.btnDark, () => {
                 if (!canC) { Sfx.deny(); this.toast('需要两把相同阶级的同种武器', COL.bad, 0, 24); return; }
                 run.combine(idx); Sfx.combine(); close(); onChange();
             }, 24);
             cb.node.setPosition(-85, -ph / 2 + 45);
             const sv = run.sellValue(w);
-            const sb = button(p, 150, 56, `出售 ◆${sv}`, run.weapons.length > 1 ? '#b8473f' : COL.btnDark, () => {
+            const sb = button(p, 150, 56, `出售 ◆${sv}`, run.weapons.length > 1 ? COL.red : COL.btnDark, () => {
                 if (run.weapons.length <= 1) { Sfx.deny(); this.toast('至少保留一把武器', COL.bad, 0, 24); return; }
                 run.sell(idx); Sfx.sell(); close(); onChange();
             }, 24);
@@ -1035,11 +1069,11 @@ export class UI {
         res.node.setPosition(cx, this.B + 170);
         const st = button(p, 200, 50, '设置', COL.btnDark, () => this.showSettings(true), 22);
         st.node.setPosition(cx, this.B + 95);
-        const quit = button(p, 200, 50, '放弃本局', '#b8473f', () => {
+        const quit = button(p, 200, 50, '放弃本局', COL.red, () => {
             this.infoPopup((pp, w, h) => {
                 const q = label(pp, '确定放弃本局吗？', 28, COL.text);
                 q.node.setPosition(0, 40);
-                const y = button(pp, 140, 56, '放弃', '#b8473f', () => { clearChildren(this.popup); this.host.quitToMenu(); }, 24);
+                const y = button(pp, 140, 56, '放弃', COL.red, () => { clearChildren(this.popup); this.host.quitToMenu(); }, 24);
                 y.node.setPosition(-80, -50);
                 const n = button(pp, 140, 56, '取消', COL.btnDark, () => { this.showPause(); }, 24);
                 n.node.setPosition(80, -50);
@@ -1058,7 +1092,7 @@ export class UI {
         const t = label(s, win ? '胜利！' : '核芯损毁', 76, win ? COL.gold : COL.bad, { outline: 8 });
         t.node.setPosition(0, this.T - 70);
         popIn(t.node);
-        const sub = label(s, win ? `你在 ${run.dangerDef.name} 中坚持了 ${MAX_WAVE} 波！` : `倒在了第 ${run.wave} 波`, 26, COL.text);
+        const sub = label(s, (win ? `你在「${run.stage.name}」${run.dangerDef.name} 中坚持了 ${MAX_WAVE} 波！` : `「${run.stage.name}」${run.dangerDef.name}  ·  倒在了第 ${run.wave} 波`), 26, COL.text);
         sub.node.setPosition(0, this.T - 135);
         const pw = 520, ph = Math.min(290, this.H - 280);
         const p = mkNode('p', s);
@@ -1074,7 +1108,7 @@ export class UI {
             ['击杀', '' + run.kills],
             ['收集晶体', '' + run.matsCollected],
             ['总伤害', '' + Math.round(run.damageDone)],
-            ['危险等级', run.dangerDef.name],
+            ['关卡', run.stage.name + ' · ' + run.dangerDef.name],
         ];
         rows.forEach((r, i) => {
             const a = label(p, r[0], 22, COL.dim, { align: 'left' });
@@ -1097,7 +1131,7 @@ export class UI {
             c.setPosition(-110 + (i % 6) * 44, ph / 2 - 225 - Math.floor(i / 6) * 42);
         });
         if (win && !run.endless) {
-            const e = button(s, 260, 66, '继续（无尽模式）', '#7e57c2', () => this.host.continueEndless(), 24);
+            const e = button(s, 260, 66, '继续（无尽模式）', COL.purple, () => this.host.continueEndless(), 24);
             e.node.setPosition(-290, this.B + 60);
         }
         const r = button(s, 240, 66, '再来一局', COL.btn, () => this.host.restart(), 28);

@@ -2,6 +2,8 @@
 import { _decorator, Component, view, ResolutionPolicy, input, Input, EventKeyboard, KeyCode, game, Game, screen } from 'cc';
 import { Atlas } from './core/Atlas';
 import { registerArt } from './core/Art';
+import { CloudSave } from './core/CloudSave';
+import { StageDef } from './data/Stages';
 import { Sfx } from './core/Sfx';
 import { Save } from './core/Save';
 import { World, WorldHost } from './game/World';
@@ -47,6 +49,13 @@ export class Main extends Component implements WorldHost, UIHost {
         Sfx.startMusic();
         this.ui.showMenu();
         if (typeof document !== 'undefined') { const b = document.getElementById('boot'); if (b) b.remove(); }
+        // TapTap cloud save: compare at startup, upload progress after it changes
+        Save.onSaved = () => CloudSave.requestUpload();
+        CloudSave.onConflict = () => this.ui.showCloudConflict();
+        CloudSave.onChange = () => {
+            if (this.state === 'menu' && (this.ui.screenName === 'saves' || this.ui.screenName === 'menu') && !this.ui.popup.children.length) this.ui.refreshScreen();
+        };
+        CloudSave.init();
     }
 
     private resKey = '';
@@ -78,7 +87,7 @@ export class Main extends Component implements WorldHost, UIHost {
         this.world.zoom = this.ui.scale > 1.2 ? 1.15 : this.ui.scale > 1 ? 1.07 : 1;
         // rebuild the current screen so it fits the new aspect ratio
         switch (this.state) {
-            case 'menu': if (this.ui.inSettings) this.ui.showSettings(false); else this.ui.showMenu(); break;
+            case 'menu': if (this.ui.inSettings) this.ui.showSettings(false); else this.ui.refreshScreen(); break;
             case 'play': this.ui.buildHud(); break;
             case 'pause': this.ui.buildHud(); this.ui.showPause(); break;
             case 'shop': this.ui.showShop(); break;
@@ -100,6 +109,7 @@ export class Main extends Component implements WorldHost, UIHost {
         dt = Math.min(dt, 1 / 30);
         if (this.state === 'play' || this.state === 'waveEnd' || this.state === 'over') {
             if (this.state === 'play') {
+                Save.data.playTime += dt;
                 const k = this.keys;
                 let kx = 0, ky = 0;
                 if (k[KeyCode.KEY_A] || k[KeyCode.ARROW_LEFT]) kx -= 1;
@@ -132,6 +142,7 @@ export class Main extends Component implements WorldHost, UIHost {
         this.ui.resetJoystick();
         const run = this.runObj;
         const econ = run.endWave();
+        Save.save(); // codex discoveries of this wave
         this.ui.toast('波次完成！', COL.gold, 140, 46);
         if (econ.harvest > 0) this.scheduleOnce(() => this.ui.toast(`收获 +${econ.harvest}`, COL.mat, 80, 30), 0.3);
         if (econ.interest > 0) this.scheduleOnce(() => this.ui.toast(`利息 +${econ.interest}`, COL.mat, 40, 28), 0.6);
@@ -187,16 +198,19 @@ export class Main extends Component implements WorldHost, UIHost {
         d.runs++;
         d.kills += run.kills;
         d.bestWave = Math.max(d.bestWave, run.wave);
-        if (win) d.wins[run.char.id] = Math.max(Save.winLevel(run.char.id), run.danger);
+        if (win) {
+            d.wins[run.char.id] = Math.max(Save.winLevel(run.char.id), run.danger);
+            d.stages[run.stage.id] = Math.max(Save.stageLevel(run.stage.id), run.danger);
+        }
         Save.save();
     }
 
     // ================================================================ UIHost
     run() { return this.runObj; }
 
-    startRun(c: CharDef, weaponId: string, danger: number) {
+    startRun(c: CharDef, weaponId: string, danger: number, stage: StageDef) {
         Sfx.unlock();
-        this.runObj = new Run(c, weaponId, danger);
+        this.runObj = new Run(c, weaponId, danger, stage);
         this.recorded = false;
         this.world.playerSpr.node.active = true;
         this.world.beginRun(this.runObj);
@@ -254,7 +268,7 @@ export class Main extends Component implements WorldHost, UIHost {
         const r = this.runObj;
         this.quitToMenu();
         this.ui.selChar = r.char;
-        this.startRun(r.char, this.ui.selWeapon || r.char.weapons[0], r.danger);
+        this.startRun(r.char, this.ui.selWeapon || r.char.weapons[0], r.danger, r.stage);
     }
 
     bossInfo() {
@@ -266,4 +280,11 @@ export class Main extends Component implements WorldHost, UIHost {
     waveInfo() { return { time: this.world.waveTime, wave: this.runObj ? this.runObj.wave : 1 }; }
 
     setMove(x: number, y: number) { this.joyX = x; this.joyY = y; }
+
+    /** Stage select: show that stage's arena behind the menu. */
+    previewStage(st: StageDef) {
+        this.world.setArena(st);
+        this.world.camX = 0; this.world.camY = 0;
+        this.world.updateCamera(1);
+    }
 }
