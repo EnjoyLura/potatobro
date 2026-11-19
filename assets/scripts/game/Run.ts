@@ -43,7 +43,8 @@ export class Run {
     damageDone = 0;
     matsCollected = 0;
     won = false;
-    endless = false;
+    endless = false;       // past wave 20
+    endlessMode = false;   // started from the stage screen's endless mode (no victory at wave 20)
 
     constructor(char: CharDef, weaponId: string, danger: number, stage: StageDef = STAGES[0]) {
         this.char = char;

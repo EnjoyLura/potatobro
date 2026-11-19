@@ -20,6 +20,7 @@ export interface SaveData {
     bestWave: number;
     wins: { [charId: string]: number };   // highest difficulty cleared per character (-1 none)
     stages: { [stageId: string]: number }; // highest difficulty cleared per stage (-1 none)
+    endless: { [stageId: string]: number }; // best wave reached in endless mode per stage
     runs: number;
     kills: number;
     playTime: number;   // seconds in battle
@@ -28,8 +29,8 @@ export interface SaveData {
 }
 
 /** The part of the save that is synced to the cloud. */
-export type Progress = Pick<SaveData, 'bestWave' | 'wins' | 'stages' | 'runs' | 'kills' | 'playTime' | 'codex' | 'savedAt'>;
-const PROGRESS_KEYS: (keyof Progress)[] = ['bestWave', 'wins', 'stages', 'runs', 'kills', 'playTime', 'codex', 'savedAt'];
+export type Progress = Pick<SaveData, 'bestWave' | 'wins' | 'stages' | 'endless' | 'runs' | 'kills' | 'playTime' | 'codex' | 'savedAt'>;
+const PROGRESS_KEYS: (keyof Progress)[] = ['bestWave', 'wins', 'stages', 'endless', 'runs', 'kills', 'playTime', 'codex', 'savedAt'];
 
 const KEY = 'core_rush_save_v1';
 
@@ -43,7 +44,7 @@ function stableJson(v: any): string {
 export class Save {
     static data: SaveData = {
         sfx: true, music: true, sfxVol: 1, musicVol: 1, numbers: true, shake: true,
-        bestWave: 0, wins: {}, stages: {}, runs: 0, kills: 0, playTime: 0, codex: { e: {}, w: {}, i: {} }, savedAt: 0,
+        bestWave: 0, wins: {}, stages: {}, endless: {}, runs: 0, kills: 0, playTime: 0, codex: { e: {}, w: {}, i: {} }, savedAt: 0,
     };
     private static lastProgress = '';
     /** Called after every save (cloud sync hook). */
@@ -66,6 +67,7 @@ export class Save {
                 }
                 const cx = this.data.codex || ({} as Codex);
                 this.data.codex = { e: cx.e || {}, w: cx.w || {}, i: cx.i || {} };
+                this.data.endless = this.data.endless || {};
                 // saves from before the codex: count the first stage's enemies up to the best wave as seen
                 if (!old.codex && this.data.bestWave > 0) {
                     const hive = STAGES[0];
@@ -111,6 +113,7 @@ export class Save {
         const cx = this.data.codex || ({} as Codex);
         this.data.codex = { e: cx.e || {}, w: cx.w || {}, i: cx.i || {} };
         this.data.stages = this.data.stages || {};
+        this.data.endless = this.data.endless || {};
         this.lastProgress = this.progressKey(this.data);
         try { localStorage.setItem(KEY, JSON.stringify(this.data)); } catch (e) { /* ignore */ }
     }

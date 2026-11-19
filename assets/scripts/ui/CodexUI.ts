@@ -206,6 +206,7 @@ function detail(ui: UI, p: Node, w: number, h: number, e: Entry | undefined) {
         tags = [[STAGE_MAP[def.stage || 'hive'].name, '#4fc3f7']];
         if (def.boss) tags.push(['首领', '#ff5c5c']); else if (def.elite) tags.push(['精英', '#ff9f43']); else if (def.neutral) tags.push(['中立', '#5fd35f']);
         lines.push({ t: def.desc, c: '#ffffff' });
+        if (def.mech) lines.push({ t: '机制：' + def.mech, c: '#ffd27a' });
         lines.push({ t: `生命 ${def.hp}${def.hpW ? ` (+${def.hpW}/波)` : ''}`, c: COL.mat });
         if (!def.neutral) lines.push({ t: `接触伤害 ${def.dmg}${def.dmgW ? ` (+${def.dmgW}/波)` : ''}`, c: '#ff8a8a' });
         lines.push({ t: `速度 ${def.speed}  ·  掉落晶体 ${def.mats}`, c: '#d8d8de' });

@@ -8,13 +8,13 @@ import {
     COL, C, panel, shadowPanel, label, button, Btn, blocker, bar, Bar, icon, iconFit, popIn, clearChildren, size, opacity, tappable, tapSound, drawRR,
     pill, slider, toggle, cellBg,
 } from './UIKit';
-import { STAGES, StageDef } from '../data/Stages';
+import { STAGES, StageDef, ENDLESS } from '../data/Stages';
 import { showStageSelect } from './StageUI';
 import { showCodex } from './CodexUI';
 import { showSaves, showCloudConflict } from './SaveUI';
 
 /** Shown on the main menu and settings screen; bump with each release (see changelogPopup). */
-export const VERSION = 'V1.4';
+export const VERSION = 'V1.5';
 import { itemLines, weaponLines, classText, tierColor, statValueText, Line } from './Text';
 import { CHARACTERS, CharDef } from '../data/Characters';
 import { WEAPON_MAP, WEAPON_CLASSES, TIER_NAMES, TIER_BG, TIER_COLORS, WeaponDef } from '../data/Weapons';
@@ -24,7 +24,7 @@ import { DANGERS, MAX_WAVE } from '../data/Enemies';
 import { Run, MAX_WEAPONS, UpgradeOption } from '../game/Run';
 
 export interface UIHost {
-    startRun(c: CharDef, weaponId: string, danger: number, stage: StageDef): void;
+    startRun(c: CharDef, weaponId: string, danger: number, stage: StageDef, endless?: boolean): void;
     previewStage(st: StageDef): void;
     nextWave(): void;
     resume(): void;
@@ -59,6 +59,8 @@ export class UI {
     selWeapon = '';
     selDanger = 0;
     selStage: StageDef = STAGES[0];
+    /** '难度三' or '无尽模式' for the current stage screen choice. */
+    dangerLabel() { return this.selDanger === ENDLESS ? '无尽模式' : DANGERS[this.selDanger].name; }
     /** Which full screen is showing (rebuilt on resize / cloud save changes). */
     screenName = '';
 
@@ -184,7 +186,6 @@ export class UI {
         g.fillColor = C('#0f0b12', 110); g.rect(-this.W, -this.H, this.W * 2, this.H * 2); g.fill();
         const colW = Math.min(440, this.W * 0.4);
         const colX = this.L + 30 + colW / 2;
-        g.fillColor = C('#0f0b12', 70); g.rect(-this.W, -this.H, this.W + this.L + colW + 60, this.H * 2); g.fill();
 
         // right half: hero with weapons, enemies around it
         const artL = this.L + colW + 60, artCX = (artL + this.R) / 2, artCY = -H * 0.04;
@@ -369,7 +370,8 @@ export class UI {
         const lines = [`最高波次  ${d.bestWave}`, `总局数  ${d.runs}`, `总击杀  ${d.kills}`, `战斗时长  ${Math.floor(d.playTime / 60)} 分钟`, '', '各关卡最高通关难度：'];
         for (const st of STAGES) {
             const lv = Save.stageLevel(st.id);
-            lines.push(`  ${st.name}  ·  ${lv >= 0 ? DANGERS[lv].name : '未通关'}`);
+            const en = Save.data.endless[st.id];
+            lines.push(`  ${st.name}  ·  ${lv >= 0 ? DANGERS[lv].name : '未通关'}${en ? `  ·  无尽 ${en} 波` : ''}`);
         }
         lines.push('', '各机体最高通关难度：');
         let any = false;
@@ -383,7 +385,8 @@ export class UI {
 
     changelogPopup() {
         this.textPopup('更新日志', [
-            `${VERSION}  关卡：荒原虫巢、冰封裂谷、熔火工坊、虚空星港，各有场地、怪物、精英与首领；难度逐级解锁。图鉴（武器、物品、怪物）。TapTap 云存档。全新界面风格。`,
+            `${VERSION}  新地图：毒沼雨林、沙海遗迹、机械废墟、星渊回廊（共 8 张）；新怪物与机制：治疗、钻地、炮塔、瞬移、环绕射击、跳跃、毒雾与灼烧痕迹；每张地图都有独立造型的精英与首领；每个关卡新增无尽模式；物品图标不再重复。`,
+            'V1.4  关卡：荒原虫巢、冰封裂谷、熔火工坊、虚空星港，各有场地、怪物、精英与首领；难度逐级解锁。图鉴（武器、物品、怪物）。TapTap 云存档。全新界面风格。',
             'V1.3  屏幕适配：手机竖握自动横屏、刘海屏避让、平板与带鱼屏；手机画面更清晰；新菜单与设置（音量滑条）。',
             'V1.2  音效精简：枪械与近战统一音色，击杀与点击换新音效，其余回归经典合成音；战斗 BGM。',
             'V1.1  打击感：命中停顿、爆炸与碎片特效、录音音效。',
@@ -401,7 +404,7 @@ export class UI {
         tappable(dim, () => { });
         const t = label(s, '选择机体', 44, '#ffffff', { outline: 5 });
         t.node.setPosition(0, this.T - 36);
-        const st = label(s, `${this.selStage.name}  ·  ${DANGERS[this.selDanger].name}`, 20, COL.gold, { outline: 3 });
+        const st = label(s, `${this.selStage.name}  ·  ${this.dangerLabel()}`, 20, COL.gold, { outline: 3 });
         st.node.setPosition(0, this.T - 76);
 
         const top = this.T - 100, bottom = this.B + 92;
@@ -486,7 +489,7 @@ export class UI {
         tappable(dim, () => { });
         const t = label(s, '选择初始武器', 44, '#ffffff', { outline: 5 });
         t.node.setPosition(0, this.T - 36);
-        const st = label(s, `${this.selStage.name}  ·  ${DANGERS[this.selDanger].name}  ·  ${c.name}`, 20, COL.gold, { outline: 3 });
+        const st = label(s, `${this.selStage.name}  ·  ${this.dangerLabel()}  ·  ${c.name}`, 20, COL.gold, { outline: 3 });
         st.node.setPosition(0, this.T - 76);
         const ws = c.weapons;
         for (const id of ws) Save.seeWeapon(id);
@@ -523,7 +526,7 @@ export class UI {
         redraw();
         const back = button(s, Math.min(230, this.W * 0.2), 62, '返回', COL.red, () => this.showCharSelect(), 28);
         back.node.setPosition(this.L + 16 + back.w / 2, this.B + 44);
-        const go = button(s, Math.min(250, this.W * 0.21), 62, '出发！', COL.btn, () => this.host.startRun(this.selChar, this.selWeapon, this.selDanger, this.selStage), 30);
+        const go = button(s, Math.min(250, this.W * 0.21), 62, '出发！', COL.btn, () => this.host.startRun(this.selChar, this.selWeapon, this.selDanger === ENDLESS ? 0 : this.selDanger, this.selStage, this.selDanger === ENDLESS), 30);
         go.node.setPosition(this.R - 16 - go.w / 2, this.B + 44);
     }
 
@@ -590,7 +593,7 @@ export class UI {
         const bagStr = run.bag > 0 ? `背包 +${run.bag}` : '';
         if (L.bag !== bagStr) { L.bag = bagStr; this.bagText.string = bagStr; }
         const wi = this.host.waveInfo();
-        const wt = `第 ${wi.wave} 波` + (run.endless ? '（无尽）' : '');
+        const wt = (run.endlessMode ? '无尽 · ' : '') + `第 ${wi.wave} 波` + (run.endless && !run.endlessMode ? '（无尽）' : '');
         if (L.wave !== wt) { L.wave = wt; this.waveText.string = wt; }
         const tt = Math.ceil(wi.time);
         if (L.time !== tt) {
@@ -1092,7 +1095,7 @@ export class UI {
         const t = label(s, win ? '胜利！' : '核芯损毁', 76, win ? COL.gold : COL.bad, { outline: 8 });
         t.node.setPosition(0, this.T - 70);
         popIn(t.node);
-        const sub = label(s, (win ? `你在「${run.stage.name}」${run.dangerDef.name} 中坚持了 ${MAX_WAVE} 波！` : `「${run.stage.name}」${run.dangerDef.name}  ·  倒在了第 ${run.wave} 波`), 26, COL.text);
+        const sub = label(s, run.endlessMode ? `「${run.stage.name}」无尽模式  ·  坚持到第 ${run.wave} 波（最佳 ${Save.data.endless[run.stage.id] || run.wave}）` : (win ? `你在「${run.stage.name}」${run.dangerDef.name} 中坚持了 ${MAX_WAVE} 波！` : `「${run.stage.name}」${run.dangerDef.name}  ·  倒在了第 ${run.wave} 波`), 26, COL.text);
         sub.node.setPosition(0, this.T - 135);
         const pw = 520, ph = Math.min(290, this.H - 280);
         const p = mkNode('p', s);
@@ -1108,7 +1111,7 @@ export class UI {
             ['击杀', '' + run.kills],
             ['收集晶体', '' + run.matsCollected],
             ['总伤害', '' + Math.round(run.damageDone)],
-            ['关卡', run.stage.name + ' · ' + run.dangerDef.name],
+            ['关卡', run.stage.name + ' · ' + (run.endlessMode ? '无尽模式' : run.dangerDef.name)],
         ];
         rows.forEach((r, i) => {
             const a = label(p, r[0], 22, COL.dim, { align: 'left' });

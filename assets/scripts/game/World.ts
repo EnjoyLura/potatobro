@@ -45,7 +45,15 @@ class Enemy {
     alive = true; hitCd = 0; id = 0; life = 0; flip = 1; scale = 1;
     punch = 0;      // squash amount after a hit (decays)
     spawnT = 0;     // grows 0..1 while popping in
+    hidden = false; // burrowed: not targetable, no contact damage
+    alphaSet = 255;
+    trailT = 0;
+    jump = 0;       // hopper: extra scale while airborne
 }
+
+/** Ground patches left by monsters: frost (slows), poison and fire (hurt). */
+class Zone { x = 0; y = 0; r = 0; t = 0; life = 0; kind: 'slow' | 'poison' | 'burn' = 'slow'; spr: Sprite = null; }
+const ZONE_COL: { [k: string]: number[] } = { slow: [150, 225, 255], poison: [130, 230, 80], burn: [255, 120, 40] };
 
 class Bullet {
     x = 0; y = 0; vx = 0; vy = 0; r = 8; dmg = 1; crit = false; pierce = 0; bounce = 0;
@@ -100,6 +108,9 @@ export class World {
     enemies: Enemy[] = []; bullets: Bullet[] = []; pickups: Pickup[] = []; particles: Particle[] = [];
     nums: DmgNum[] = []; markers: Marker[] = []; weapons: WeaponInst[] = []; structures: Structure[] = []; drones: Drone[] = [];
     decals: Particle[] = [];
+    zones: Zone[] = [];
+    private zoneHurtT = 0;
+    private slowed = false;
     grid = new SpatialGrid<Enemy>(80);
     q: Enemy[] = [];
     // wave
@@ -158,7 +169,7 @@ export class World {
         const tw = st.aw + BORDER * 2, th = st.ah + BORDER * 2;
         // floor resolution follows the screen: battle view is zoomed up to 1.15x on phones
         const floorRes = Math.min(2, Atlas.maxTex / Math.max(tw, th), Math.max(1, Atlas.quality * 1.15));
-        const canvas = drawArena(st.aw, st.ah, BORDER, floorRes, st.theme, this.lava);
+        const canvas = drawArena(st.aw, st.ah, BORDER, floorRes, st.theme, this.lava, st.mud ? 'mud' : 'lava');
         const old = this.floor.spriteFrame;
         this.floor.spriteFrame = Atlas.frameFromCanvas(canvas);
         this.floor.node.getComponent(UITransform).setContentSize(tw, th);
@@ -191,6 +202,9 @@ export class World {
         this.structures.length = 0;
         for (const d of this.drones) this.pools.fxTop.put(d.spr);
         this.drones.length = 0;
+        for (const z of this.zones) this.pools.decal.put(z.spr);
+        this.zones.length = 0;
+        this.slowed = false;
         for (const n of this.nums) { n.active = false; n.node.active = false; }
         if (decals) { for (const d of this.decals) d.pool.put(d.spr); this.decals.length = 0; }
         this.boss = null;
@@ -313,6 +327,7 @@ export class World {
             this.updatePickups(dt);
             this.waveTime -= dt;
             this.updateLava(dt);
+            this.updateZones(dt);
             if (this.waveTime <= 0 && !this.dead) {
                 this.waveTime = 0;
                 this.endWave();
@@ -329,7 +344,13 @@ export class World {
 
     /** Molten forge: standing in a lava pool hurts (armor and dodge apply as usual). */
     updateLava(dt: number) {
+        this.slowed = false;
         if (!this.lava.length || this.dead) return;
+        if (this.stage.mud) {
+            // toxic marsh: mud slows instead of hurting
+            for (const p of this.lava) if (dist2(this.px, this.py, p.x, p.y) < (p.r - 8) * (p.r - 8)) { this.slowed = true; break; }
+            return;
+        }
         this.lavaT -= dt;
         if (this.lavaT > 0) return;
         for (const p of this.lava) {
@@ -341,8 +362,41 @@ export class World {
         }
     }
 
+    addZone(kind: 'slow' | 'poison' | 'burn', x: number, y: number, r: number, life: number) {
+        if (this.zones.length > 60) { const o = this.zones.shift(); this.pools.decal.put(o.spr); }
+        const z = new Zone();
+        z.kind = kind; z.x = x; z.y = y; z.r = r; z.life = life; z.t = 0;
+        z.spr = this.pools.decal.get('circle');
+        z.spr.node.setPosition(x, y);
+        z.spr.node.setScale(r / 32, r / 32 * 0.8, 1);
+        const c = ZONE_COL[kind];
+        setTint(z.spr, c[0], c[1], c[2], 0);
+        this.zones.push(z);
+    }
+
+    updateZones(dt: number) {
+        let hurt = false;
+        this.zoneHurtT -= dt;
+        for (let i = this.zones.length - 1; i >= 0; i--) {
+            const z = this.zones[i];
+            z.t += dt;
+            if (z.t >= z.life) { this.pools.decal.put(z.spr); this.zones.splice(i, 1); continue; }
+            const a = Math.min(1, z.t / 0.2) * Math.min(1, (z.life - z.t) / 0.5);
+            const c = ZONE_COL[z.kind];
+            setTint(z.spr, c[0], c[1], c[2], Math.round((z.kind === 'slow' ? 120 : 105) * a));
+            const k = 1 + Math.sin(z.t * 6) * 0.03;
+            z.spr.node.setScale(z.r / 32 * k, z.r / 32 * 0.8 * k, 1);
+            const dx = this.px - z.x, dy = (this.py - z.y) / 0.8;
+            if (dx * dx + dy * dy < z.r * z.r * 0.8) { if (z.kind === 'slow') this.slowed = true; else hurt = true; }
+        }
+        if (hurt && this.zoneHurtT <= 0 && !this.dead) {
+            this.zoneHurtT = 0.7;
+            this.hurtPlayer(Math.max(1, Math.round(1 + this.run.wave * 0.12)));
+        }
+    }
+
     // ================================================================ player
-    playerSpeed() { return 340 * Math.max(0.35, 1 + this.run.stats.speed / 100); }
+    playerSpeed() { return 340 * Math.max(0.35, 1 + this.run.stats.speed / 100) * (this.slowed ? 0.55 : 1); }
 
     updatePlayer(dt: number) {
         const run = this.run;
@@ -594,6 +648,7 @@ export class World {
         e.timer2 = rand(3, 6);
         e.frame = def.sprite;
         e.spr = this.pools.enemy.get(def.sprite);
+        setAlpha(e.spr, 255);
         e.spr.node.setPosition(x, y);
         this.enemies.push(e);
         if (def.boss || def.elite) { if (!this.boss || def.boss) this.boss = e; }
@@ -611,7 +666,7 @@ export class World {
     // ================================================================ enemies
     rebuildGrid() {
         this.grid.clear();
-        for (const e of this.enemies) if (e.alive) this.grid.insert(e);
+        for (const e of this.enemies) if (e.alive && !e.hidden) this.grid.insert(e);
     }
 
     updateEnemies(dt: number) {
@@ -720,12 +775,121 @@ export class World {
                     break;
                 }
                 case 'tree': break;
+                case 'healer': {
+                    // stays behind the swarm and heals it
+                    const want = 300;
+                    const k = d > want + 40 ? 1 : d < want - 60 ? -1 : 0;
+                    mvx = nx * spd * k - ny * spd * 0.25; mvy = ny * spd * k + nx * spd * 0.25;
+                    e.timer -= dt;
+                    if (e.timer <= 0) {
+                        e.timer = rand(2.4, 3);
+                        this.grid.query(e.x, e.y, 200, this.q);
+                        let healed = 0;
+                        for (const o of this.q) {
+                            if (o === e || !o.alive || o.def.neutral || o.hp >= o.maxHp) continue;
+                            if (dist2(o.x, o.y, e.x, e.y) > 200 * 200) continue;
+                            const amt = Math.max(2, Math.round(o.maxHp * (o.def.elite ? 0.04 : 0.2)));
+                            o.hp = Math.min(o.maxHp, o.hp + amt);
+                            this.showNum(o.x, o.y + o.r, amt, 120, 255, 140, false, true);
+                            healed++;
+                        }
+                        this.spawnFx('ring', e.x, e.y + 10, 0, 0, 0.45, 0.6, 6.2, 200, 0, [120, 255, 140]);
+                        void healed;
+                    }
+                    break;
+                }
+                case 'burrow': {
+                    // 0: underground and fast, 1: surfacing (telegraph), 2: above ground
+                    e.stateT -= dt;
+                    if (e.state === 0) {
+                        e.hidden = true;
+                        mvx = nx * spd * 1.7; mvy = ny * spd * 1.7;
+                        if (e.stateT <= 0 || d < 60) { e.state = 1; e.stateT = 0.45; this.puff(e.x, e.y, e.def, e.r); }
+                    } else if (e.state === 1) {
+                        e.hidden = false;
+                        e.flashT = Math.floor(e.stateT * 12) % 2 === 0 ? 0.05 : 0;
+                        if (e.stateT <= 0) { e.state = 2; e.stateT = rand(2.5, 3.5); }
+                    } else {
+                        mvx = nx * spd * 0.8; mvy = ny * spd * 0.8;
+                        if (e.stateT <= 0) { e.state = 0; e.stateT = rand(2, 2.8); this.puff(e.x, e.y, e.def, e.r); }
+                    }
+                    break;
+                }
+                case 'sentry': {
+                    e.timer -= dt;
+                    if (e.timer <= 0 && d < 650) {
+                        e.timer = rand(2.2, 2.8);
+                        const base = Math.atan2(dy, dx);
+                        for (let k = -1; k <= 1; k++) this.enemyShoot(e.x, e.y + 10, base + k * 0.22, 300, e.dmg, e.def.id === 'cactus' ? [170, 230, 120] : [255, 200, 90]);
+                        e.punch = 0.6;
+                    }
+                    break;
+                }
+                case 'blink': {
+                    e.stateT -= dt;
+                    if (e.state === 0) {
+                        mvx = nx * spd * 0.6; mvy = ny * spd * 0.6;
+                        e.timer -= dt;
+                        if (e.timer <= 0 && d < 900) {
+                            this.puff(e.x, e.y, e.def, e.r);
+                            const a = rand(0, TAU), rr = rand(160, 220);
+                            e.x = clamp(px + Math.cos(a) * rr, -HALF_W + 40, HALF_W - 40);
+                            e.y = clamp(py + Math.sin(a) * rr, -HALF_H + 40, HALF_H - 40);
+                            this.puff(e.x, e.y, e.def, e.r);
+                            this.spawnFx('ring', e.x, e.y + 10, 0, 0, 0.3, 0.4, 2.2, 220, 0, [160, 120, 255]);
+                            e.state = 1; e.stateT = 0.5; e.spawnT = 0.4;
+                        }
+                    } else if (e.state === 1) {
+                        e.flashT = Math.floor(e.stateT * 12) % 2 === 0 ? 0.05 : 0;
+                        if (e.stateT <= 0) { e.state = 2; e.stateT = 0.4; e.dirX = nx; e.dirY = ny; }
+                    } else {
+                        mvx = e.dirX * 640; mvy = e.dirY * 640;
+                        if (e.stateT <= 0) { e.state = 0; e.timer = rand(3, 4.2); }
+                    }
+                    break;
+                }
+                case 'orbit': {
+                    const want = 280, dir = e.phase > Math.PI ? 1 : -1;
+                    const rk = d > want + 30 ? 1 : d < want - 30 ? -1 : 0;
+                    mvx = (nx * rk * 0.8 - ny * dir) * spd; mvy = (ny * rk * 0.8 + nx * dir) * spd;
+                    e.timer -= dt;
+                    if (e.timer <= 0 && d < 520) {
+                        e.timer = rand(1.8, 2.4);
+                        this.enemyShoot(e.x, e.y, Math.atan2(dy, dx), 280, e.dmg, [140, 230, 255]);
+                    }
+                    break;
+                }
+                case 'hopper': {
+                    e.stateT -= dt;
+                    if (e.state === 0) {
+                        mvx = nx * spd * 0.25; mvy = ny * spd * 0.25;
+                        e.timer -= dt;
+                        if (e.timer <= 0 && d < 700) { e.state = 1; e.stateT = 0.35; e.punch = 0.8; }
+                    } else if (e.state === 1) {
+                        // crouch, then leap at where the player is now
+                        if (e.stateT <= 0) {
+                            const tx = px + rand(-30, 30), ty = py + rand(-30, 30);
+                            e.dirX = (tx - e.x) / 0.55; e.dirY = (ty - e.y) / 0.55;
+                            const vmax = 900, vl = Math.hypot(e.dirX, e.dirY);
+                            if (vl > vmax) { e.dirX *= vmax / vl; e.dirY *= vmax / vl; }
+                            e.state = 2; e.stateT = 0.55;
+                        }
+                    } else {
+                        mvx = e.dirX; mvy = e.dirY;
+                        e.jump = Math.sin(Math.max(0, 1 - e.stateT / 0.55) * Math.PI) * 0.4;
+                        if (e.stateT <= 0) {
+                            e.jump = 0; e.state = 0; e.timer = rand(1.3, 2);
+                            this.spawnFx('puff', e.x, e.y + 6, 0, 0, 0.3, 0.8, 1.6, 200, 0, [200, 220, 170]);
+                        }
+                    }
+                    break;
+                }
                 case 'juggernaut': this.aiJuggernaut(e, dt, nx, ny, d, spd); mvx = e.vx; mvy = e.vy; break;
                 case 'queen': this.aiQueen(e, dt, nx, ny, d, spd); mvx = e.vx; mvy = e.vy; break;
                 case 'boss': this.aiBoss(e, dt, nx, ny, d, spd); mvx = e.vx; mvy = e.vy; break;
             }
             // separation
-            if (e.def.ai !== 'tree') {
+            if (e.def.ai !== 'tree' && e.def.ai !== 'sentry') {
                 this.grid.query(e.x, e.y, e.r + 40, this.q);
                 for (let j = 0; j < this.q.length; j++) {
                     const o = this.q[j];
@@ -747,8 +911,12 @@ export class World {
             e.x = clamp(e.x, -HALF_W + e.r * 0.6, HALF_W - e.r * 0.6);
             e.y = clamp(e.y, -HALF_H + e.r * 0.6, HALF_H - e.r * 0.6);
             if (Math.abs(mvx) > 5) e.flip = mvx > 0 ? -1 : 1;
-            // contact damage
-            if (!e.def.neutral && d < e.r + PLAYER_R - 4) this.hurtPlayer(e.dmg, e);
+            if (e.def.trail && (Math.abs(mvx) + Math.abs(mvy)) > 20) {
+                e.trailT -= dt;
+                if (e.trailT <= 0) { e.trailT = 0.3; this.addZone(e.def.trail, e.x, e.y, 30, 2.4); }
+            }
+            // contact damage (not while burrowed or in the air)
+            if (!e.def.neutral && !e.hidden && e.jump < 0.15 && d < e.r + PLAYER_R - 4) this.hurtPlayer(e.dmg, e);
             // burn
             if (e.burnT > 0) {
                 e.burnT -= dt; e.burnTick -= dt;
@@ -774,8 +942,11 @@ export class World {
             // hit squash: wider and flatter for a moment
             if (e.punch > 0) e.punch = Math.max(0, e.punch - dt * 7);
             const pw = 1 + e.punch * 0.28, ph = 1 - e.punch * 0.22;
-            e.spr.node.setPosition(e.x, e.y + e.r * 0.3);
-            e.spr.node.setScale(e.flip * (1 - sq) * e.scale * sp * pw, (1 + sq) * e.scale * sp * ph, 1);
+            const wantA = e.hidden ? 60 : 255;
+            if (e.alphaSet !== wantA) { e.alphaSet = wantA; setAlpha(e.spr, wantA); }
+            const jk = 1 + e.jump;
+            e.spr.node.setPosition(e.x, e.y + e.r * 0.3 + e.jump * 90);
+            e.spr.node.setScale(e.flip * (1 - sq) * e.scale * sp * pw * jk, (1 + sq) * e.scale * sp * ph * jk, 1);
         }
         // clean
         for (let i = this.enemies.length - 1; i >= 0; i--) if (!this.enemies[i].alive) this.enemies.splice(i, 1);
@@ -1011,6 +1182,7 @@ export class World {
             if (chance(0.012 * luck)) this.spawnPickup('fruit', e.x, e.y);
             else if (chance(0.007 * luck)) this.spawnPickup('crate', e.x, e.y, 1);
         }
+        if (e.def.onDeath) this.addZone(e.def.onDeath, e.x, e.y, e.def.onDeath === 'slow' ? 120 : 105, 3.2);
         // splitter children
         if (e.def.ai === 'splitter') {
             const n = run.wave >= 12 ? 3 : 2;

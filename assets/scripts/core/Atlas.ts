@@ -43,7 +43,9 @@ export class Atlas {
         const S = this.scale = Math.min(3, Math.max(2, Math.ceil(this.quality * 1.3 * 4) / 4));
         const PAGE = this.maxTex >= 4096 ? 4096 : 2048;
         const list = this.entries.slice();
-        for (const e of list) { e.pw = Math.ceil(e.w * S); e.ph = Math.ceil(e.h * S); }
+        // big sprites (elites, bosses) are large on screen anyway: cap them at 1.75 to save texture memory
+        const es = (e: Entry) => (e.w * e.h >= 14400 ? Math.min(S, 1.75) : S);
+        for (const e of list) { e.pw = Math.ceil(e.w * es(e)); e.ph = Math.ceil(e.h * es(e)); }
         list.sort((a, b) => b.ph - a.ph);
         // shelf packing
         let page = 0, x = PAD, y = PAD, shelfH = 0;
@@ -60,9 +62,8 @@ export class Atlas {
         for (let p = 0; p <= page; p++) {
             const c = document.createElement('canvas');
             c.width = PAGE;
-            // keep power of two height for safety on WebGL1
-            let h = 64; while (h < pagesUsedH[p]) h *= 2;
-            c.height = Math.min(PAGE, h);
+            // only as tall as needed (NPOT is fine: linear filtering, clamp, no mipmaps)
+            c.height = Math.min(PAGE, Math.ceil(pagesUsedH[p] / 16) * 16);
             canvases.push(c);
         }
         const tmp = document.createElement('canvas');
@@ -72,14 +73,14 @@ export class Atlas {
             if (!e.sil) {
                 ctx.save();
                 ctx.beginPath(); ctx.rect(e.px, e.py, e.pw, e.ph); ctx.clip();
-                ctx.translate(e.px, e.py); ctx.scale(S, S);
+                ctx.translate(e.px, e.py); ctx.scale(es(e), es(e));
                 try { e.draw(ctx, e.w, e.h, false); } catch (err) { console.error('draw fail', e.name, err); }
                 ctx.restore();
             } else {
                 tmp.width = e.pw; tmp.height = e.ph;
                 tctx.save();
                 tctx.clearRect(0, 0, e.pw, e.ph);
-                tctx.scale(S, S);
+                tctx.scale(es(e), es(e));
                 try { e.draw(tctx, e.w, e.h, true); } catch (err) { console.error('draw fail', e.name, err); }
                 tctx.restore();
                 tctx.globalCompositeOperation = 'source-in';

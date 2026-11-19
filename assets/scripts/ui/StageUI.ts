@@ -5,12 +5,13 @@ import type { UI } from './UI';
 import { mkNode, mkSprite, setTint } from '../core/Nodes';
 import { Save } from '../core/Save';
 import { Sfx } from '../core/Sfx';
-import { COL, C, label, button, panel, cellBg, size, tappable, popIn, opacity, bar } from './UIKit';
-import { STAGES, StageDef, stageEnemies } from '../data/Stages';
+import { COL, C, label, button, panel, cellBg, size, tappable, popIn, opacity, bar, scrollArea } from './UIKit';
+import { STAGES, StageDef, stageEnemies, ENDLESS } from '../data/Stages';
 import { ENEMIES, DANGERS, MAX_WAVE } from '../data/Enemies';
 
 export function stageUnlocked(i: number) { return i === 0 || Save.stageLevel(STAGES[i - 1].id) >= 0; }
-export function dangerUnlocked(st: StageDef, d: number) { return d <= Save.stageLevel(st.id) + 1; }
+/** Difficulty N+1 unlocks after clearing N; endless mode after clearing the stage on any difficulty. */
+export function dangerUnlocked(st: StageDef, d: number) { return d === ENDLESS ? Save.stageLevel(st.id) >= 0 : d <= Save.stageLevel(st.id) + 1; }
 
 export function showStageSelect(ui: UI) {
     ui.updateSize();
@@ -78,19 +79,21 @@ export function showStageSelect(ui: UI) {
     const dh = 60, dy = py - ph / 2 - 14 - dh / 2;
     const drow = panel(s, pw, dh, '#000000', undefined, 16, 0, 205);
     drow.setPosition(px, dy);
-    const d = DANGERS[ui.selDanger];
+    const endless = ui.selDanger === ENDLESS;
+    const d = endless ? null : DANGERS[ui.selDanger];
     const locked = !dangerUnlocked(st, ui.selDanger);
-    const dl = label(drow, d.name, 30, locked ? COL.dim : COL.gold, { align: 'left', outline: 0 });
+    const dl = label(drow, endless ? '无尽模式' : d.name, 30, locked ? COL.dim : endless ? '#c38bff' : COL.gold, { align: 'left', outline: 0 });
     dl.node.setPosition(-pw / 2 + 66, 0);
     const best = Save.stageLevel(st.id);
-    const bl = label(drow, best >= 0 ? `最佳通关  ${DANGERS[best].name}` : '尚未通关', 18, '#c8c8d0', { align: 'right', outline: 0 });
+    const eb = Save.data.endless[st.id] || 0;
+    const bl = label(drow, endless ? (eb ? `最佳  第 ${eb} 波` : '暂无记录') : best >= 0 ? `最佳通关  ${DANGERS[best].name}` : '尚未通关', 18, '#c8c8d0', { align: 'right', outline: 0 });
     bl.node.setPosition(pw / 2 - 66, 0);
     const arrow = (dir: number) => {
         const a = mkNode('arrow', s);
         size(a, 54, 54);
         a.setPosition(px + dir * (pw / 2 - 32), dy);
         const ag = a.addComponent(Graphics);
-        const can = ui.selDanger + dir >= 0 && ui.selDanger + dir < DANGERS.length;
+        const can = ui.selDanger + dir >= 0 && ui.selDanger + dir <= ENDLESS;
         ag.fillColor = C('#ffffff', can ? 255 : 70);
         ag.circle(0, 0, 21); ag.fill();
         ag.fillColor = C('#16161c');
@@ -102,9 +105,9 @@ export function showStageSelect(ui: UI) {
         });
     };
     arrow(-1); arrow(1);
-    const hint = label(s, locked ? `通关 ${DANGERS[ui.selDanger - 1].name} 后解锁` : '左右箭头切换难度', 18, '#ffffff', { outline: 3 });
+    const hint = label(s, locked ? (endless ? '通关本关任意难度后解锁' : `通关 ${DANGERS[ui.selDanger - 1].name} 后解锁`) : '左右箭头切换难度（最右为无尽模式）', 18, '#ffffff', { outline: 3 });
     hint.node.setPosition(px, dy - dh / 2 - 18);
-    const dd = label(s, d.desc, 18, locked ? COL.dim : '#ffd27a', { outline: 3 });
+    const dd = label(s, endless ? '波次无限，敌人越来越强；第 20 波后每 5 波一个首领' : d.desc, 18, locked ? COL.dim : '#ffd27a', { outline: 3 });
     dd.node.setPosition(px, dy - dh / 2 - 44);
 
     // ---- bottom bar: 返回, stage slots, 开始
@@ -129,14 +132,20 @@ export function showStageSelect(ui: UI) {
     pb.node.setPosition(0, -12);
     pb.set(cleared, DANGERS.length);
 
+    // stage slots: a sideways-scrolling row between 返回 and 开始 (drag to see more)
     const slotW = 96, slotH = 92, gap = 14;
+    const rowL = L + 16 + back.w + 18, rowR = R - 16 - go.w - 18;
+    const rowW = rowR - rowL;
     const slotsW = STAGES.length * slotW + (STAGES.length - 1) * gap;
-    const sx0 = (L + 16 + back.w + R - 16 - go.w) / 2 - slotsW / 2 + slotW / 2;
+    const area = scrollArea(s, rowW, slotH + 16, true);
+    area.node.setPosition((rowL + rowR) / 2, by + 6);
+    const fits = slotsW <= rowW;
+    const sx0 = fits ? -slotsW / 2 + slotW / 2 : -rowW / 2 + slotW / 2 + 4;
     STAGES.forEach((stg, i) => {
         const open = stageUnlocked(i);
-        const n = mkNode('slot', s);
+        const n = mkNode('slot', area.content);
         size(n, slotW, slotH);
-        n.setPosition(sx0 + i * (slotW + gap), by + 6);
+        n.setPosition(sx0 + i * (slotW + gap), 0);
         const cg = n.addComponent(Graphics);
         cellBg(cg, slotW, slotH, stg === st, open ? (Save.stageLevel(stg.id) >= 0 ? COL.mat : '#4fc3f7') : undefined);
         if (open) {
@@ -151,6 +160,7 @@ export function showStageSelect(ui: UI) {
         const t = label(n, open ? stg.name : '未解锁', 17, '#ffffff', { outline: 3 });
         t.node.setPosition(0, -slotH / 2 + 16);
         tappable(n, () => {
+            if (area.moved()) return;
             if (!open) { Sfx.deny(); ui.toast(`通关「${STAGES[i - 1].name}」后解锁`, COL.bad, 0, 26); return; }
             if (ui.selStage === stg) return;
             ui.selStage = stg;
@@ -158,6 +168,14 @@ export function showStageSelect(ui: UI) {
             showStageSelect(ui);
         });
     });
+    area.setHeight(slotsW + 8);
+    // keep the selected stage in view
+    if (!fits) area.scrollTo(STAGES.indexOf(st) * (slotW + gap) - (rowW - slotW) / 2);
+    // fade hint at the right edge when more stages are off-screen
+    if (!fits) {
+        const more = label(s, '‹ 滑动查看更多 ›', 15, COL.dim, { outline: 2 });
+        more.node.setPosition((rowL + rowR) / 2, by + slotH / 2 + 22);
+    }
     popIn(info);
 }
 

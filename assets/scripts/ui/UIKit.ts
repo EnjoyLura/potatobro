@@ -417,18 +417,21 @@ export interface ScrollArea { node: Node; content: Node; setHeight(h: number): v
  * Vertically scrolling, clipped area. Put children in `content` with y going down from h/2 (the top edge),
  * then call setHeight(total). Drag or mouse wheel scrolls; moved() tells taps apart from drags.
  */
-export function scrollArea(parent: Node, w: number, h: number): ScrollArea {
+export function scrollArea(parent: Node, w: number, h: number, horizontal = false): ScrollArea {
     const n = mkNode('scroll', parent);
     size(n, w, h);
     const m = n.addComponent(Mask);
     m.type = Mask.Type.GRAPHICS_RECT;
     const content = mkNode('content', n);
-    let total = h, y = 0, startY = 0, lastY = 0, moved = false;
-    const clampY = (v: number) => Math.max(0, Math.min(Math.max(0, total - h), v));
-    const apply = () => content.setPosition(0, y);
-    n.on(Node.EventType.TOUCH_START, (e: EventTouch) => { startY = lastY = e.getUILocation().y; moved = false; });
+    const view = horizontal ? w : h;
+    let total = view, y = 0, startY = 0, lastY = 0, moved = false;
+    const clampY = (v: number) => Math.max(0, Math.min(Math.max(0, total - view), v));
+    // vertical: content moves up as y grows; horizontal: content moves left
+    const apply = () => (horizontal ? content.setPosition(-y, 0) : content.setPosition(0, y));
+    const pos = (e: EventTouch) => (horizontal ? -e.getUILocation().x : e.getUILocation().y);
+    n.on(Node.EventType.TOUCH_START, (e: EventTouch) => { startY = lastY = pos(e); moved = false; });
     n.on(Node.EventType.TOUCH_MOVE, (e: EventTouch) => {
-        const p = e.getUILocation().y;
+        const p = pos(e);
         if (Math.abs(p - startY) > 12) moved = true;
         if (moved) { y = clampY(y + (p - lastY) / Math.max(0.01, n.worldScale.y)); apply(); }
         lastY = p;
@@ -436,7 +439,7 @@ export function scrollArea(parent: Node, w: number, h: number): ScrollArea {
     n.on(Node.EventType.MOUSE_WHEEL, (e: EventMouse) => { y = clampY(y - e.getScrollY() * 0.6); apply(); });
     return {
         node: n, content,
-        setHeight(v: number) { total = Math.max(h, v); y = clampY(y); apply(); },
+        setHeight(v: number) { total = Math.max(view, v); y = clampY(y); apply(); },
         moved() { return moved; },
         scrollTo(v: number) { y = clampY(v); apply(); },
     };

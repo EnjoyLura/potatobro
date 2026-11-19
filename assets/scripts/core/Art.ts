@@ -627,6 +627,349 @@ const GLYPHS: { [k: string]: (ctx: C2D) => void } = {
     fist: ctx => { rrFill(ctx, 12, 16, 40, 34, 10, W, OUT, 4); for (let i = 0; i < 3; i++) line(ctx, 22 + i * 10, 16, 22 + i * 10, 28, OUT, 3); },
     bag: ctx => { rrFill(ctx, 12, 20, 40, 36, 10, W, OUT, 4); rrFill(ctx, 24, 10, 16, 12, 4, W, OUT, 4); },
 };
+// ---------------------------------------------------------------- creature builder
+// Parametric monsters: a body shape plus parts (eyes, mouth, top, sides, tail, pattern, glow).
+// Coordinates are in a 60-unit frame scaled by k, so the same spec works at any sprite size.
+interface Creature {
+    w: number; h: number;
+    body: 'blob' | 'round' | 'spiky' | 'tall' | 'flat' | 'diamond' | 'jelly' | 'segment' | 'box';
+    col: string; size?: number;
+    pattern?: 'spots' | 'cracks' | 'plates' | 'rivets' | 'stripes' | 'swirl' | 'needles' | 'moss';
+    patCol?: string;
+    eyes: number;                 // 0..5
+    eyeStyle?: 'normal' | 'angry' | 'visor' | 'frog' | 'glow' | 'big';
+    eyeCol?: string;
+    mouth?: 'teeth' | 'fangs' | 'smile' | 'tube' | 'beak' | 'grill' | 'maw' | 'tusks' | 'none';
+    top?: 'antenna' | 'horns' | 'spikes' | 'crown' | 'crystal' | 'flame' | 'halo' | 'cap' | 'antlers' | 'dish' | 'flower' | 'mohawk';
+    topCol?: string;
+    side?: 'wings' | 'claws' | 'tentacles' | 'legs' | 'arms' | 'fins' | 'thrusters';
+    sideCol?: string;
+    tail?: 'stinger';
+    glow?: string;                // glowing core in the belly
+    rings?: string;               // planet ring around the body
+    aura?: string;                // faint ring
+    shield?: string;              // shield held in front
+}
+
+function creatureBody(ctx: C2D, c: Creature, cx: number, cy: number, R: number, fill: string, lw: number) {
+    ctx.beginPath();
+    switch (c.body) {
+        case 'round': ctx.arc(cx, cy, R, 0, TAU); break;
+        case 'tall': ctx.ellipse(cx, cy - R * 0.1, R * 0.78, R * 1.12, 0, 0, TAU); break;
+        case 'flat': ctx.ellipse(cx, cy + R * 0.12, R * 1.25, R * 0.78, 0, 0, TAU); break;
+        case 'diamond': ctx.moveTo(cx, cy - R * 1.2); ctx.lineTo(cx + R * 0.95, cy); ctx.lineTo(cx, cy + R * 1.0); ctx.lineTo(cx - R * 0.95, cy); ctx.closePath(); break;
+        case 'spiky': {
+            for (let i = 0; i <= 16; i++) {
+                const a = i / 16 * TAU, rr2 = i % 2 === 0 ? R * 1.12 : R * 0.82;
+                const x = cx + Math.cos(a) * rr2, y = cy + Math.sin(a) * rr2;
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.closePath(); break;
+        }
+        case 'jelly':
+            ctx.moveTo(cx - R, cy + R * 0.25);
+            ctx.bezierCurveTo(cx - R, cy - R * 1.25, cx + R, cy - R * 1.25, cx + R, cy + R * 0.25);
+            for (let i = 0; i <= 5; i++) ctx.quadraticCurveTo(cx + R - (i + 0.5) * R * 0.4, cy + R * 0.55, cx + R - (i + 1) * R * 0.4, cy + R * 0.25);
+            ctx.closePath(); break;
+        case 'box': rr(ctx, cx - R * 0.95, cy - R * 0.95, R * 1.9, R * 1.8, R * 0.32); break;
+        case 'segment': ctx.ellipse(cx + R * 0.35, cy, R * 0.85, R * 0.8, 0, 0, TAU); break;
+        default: // blob
+            ctx.moveTo(cx - R, cy + R * 0.2);
+            ctx.bezierCurveTo(cx - R, cy - R * 1.1, cx + R, cy - R * 1.1, cx + R, cy + R * 0.2);
+            ctx.bezierCurveTo(cx + R, cy + R * 1.05, cx - R, cy + R * 1.05, cx - R, cy + R * 0.2);
+            ctx.closePath();
+    }
+    ctx.fillStyle = fill; ctx.fill();
+    if (lw > 0) { ctx.lineWidth = lw; ctx.strokeStyle = OUT; ctx.stroke(); }
+}
+
+function drawCreature(ctx: C2D, c: Creature, w: number, h: number, sil: boolean) {
+    const k = Math.min(w, h) / 60;
+    const cx = w / 2, cy = h * 0.56;
+    const R = 21 * k * (c.size || 1);
+    const lw = Math.max(2.5, 3.2 * k);
+    const dark = shade(c.col, -0.28), side = c.sideCol || shade(c.col, -0.18), topc = c.topCol || shade(c.col, -0.35);
+    shadow(ctx, cx, h - 6 * k, R * (c.body === 'flat' ? 1.2 : 0.95), 5 * k, sil);
+    if (c.aura && !sil) { ctx.save(); ctx.strokeStyle = c.aura; ctx.globalAlpha = 0.55; ctx.lineWidth = 2 * k; ctx.beginPath(); ctx.ellipse(cx, cy, R * 1.45, R * 1.35, 0, 0, TAU); ctx.stroke(); ctx.restore(); }
+    // ---- behind the body
+    if (c.tail === 'stinger') {
+        ctx.beginPath(); ctx.moveTo(cx + R * 0.6, cy + R * 0.2);
+        ctx.quadraticCurveTo(cx + R * 1.7, cy - R * 0.1, cx + R * 1.1, cy - R * 1.2);
+        ctx.lineWidth = 7 * k; ctx.strokeStyle = OUT; ctx.lineCap = 'round'; ctx.stroke();
+        ctx.lineWidth = 4 * k; ctx.strokeStyle = side; ctx.stroke();
+        poly(ctx, [cx + R * 1.1, cy - R * 1.55, cx + R * 1.35, cy - R * 1.05, cx + R * 0.85, cy - R * 1.1], '#f4e2c6', OUT, lw * 0.7);
+    }
+    if (c.body === 'segment') {
+        for (let i = 2; i >= 1; i--) circ(ctx, cx + R * 0.35 - i * R * 0.75, cy + R * 0.12 * i, R * (0.78 - i * 0.12), i % 2 ? c.col : dark, OUT, lw);
+    }
+    if (c.side === 'wings') {
+        for (const s of [-1, 1]) {
+            ctx.save(); ctx.translate(cx + s * R * 0.7, cy - R * 0.45); ctx.rotate(s * -0.45);
+            ell(ctx, s * R * 0.55, 0, R * 0.8, R * 0.42, c.sideCol || 'rgba(220,250,255,0.75)', OUT, lw * 0.8);
+            ctx.restore();
+        }
+    } else if (c.side === 'tentacles') {
+        for (let i = 0; i < 5; i++) {
+            const x = cx - R * 0.8 + i * R * 0.4;
+            ctx.beginPath(); ctx.moveTo(x, cy + R * 0.4);
+            ctx.quadraticCurveTo(x + (i % 2 ? 6 : -6) * k, cy + R * 1.0, x + (i - 2) * 3 * k, cy + R * 1.35);
+            ctx.lineCap = 'round'; ctx.lineWidth = 7 * k; ctx.strokeStyle = OUT; ctx.stroke();
+            ctx.lineWidth = 4 * k; ctx.strokeStyle = side; ctx.stroke();
+        }
+    } else if (c.side === 'legs') {
+        for (const s of [-1, 1]) for (const j of [0, 1]) ell(ctx, cx + s * R * (0.45 + j * 0.45), cy + R * 0.92, R * 0.24, R * 0.17, dark, OUT, lw * 0.8);
+    } else if (c.side === 'fins') {
+        for (const s of [-1, 1]) poly(ctx, [cx + s * R * 0.7, cy - R * 0.1, cx + s * R * 1.45, cy + R * 0.15, cx + s * R * 0.75, cy + R * 0.55], side, OUT, lw * 0.8);
+    } else if (c.side === 'thrusters') {
+        for (const s of [-1, 1]) {
+            rrFill(ctx, cx + s * R * 1.05 - R * 0.22, cy - R * 0.3, R * 0.44, R * 0.7, R * 0.12, '#8d99a6', OUT, lw * 0.8);
+            if (!sil) ell(ctx, cx + s * R * 1.05, cy + R * 0.55, R * 0.14, R * 0.28, '#7fe7ff');
+        }
+    }
+    if (c.rings) { ctx.save(); ctx.lineWidth = 4 * k; ctx.strokeStyle = OUT; ctx.beginPath(); ctx.ellipse(cx, cy, R * 1.55, R * 0.42, -0.25, Math.PI, TAU); ctx.stroke(); ctx.lineWidth = 2.2 * k; ctx.strokeStyle = c.rings; ctx.stroke(); ctx.restore(); }
+    // ---- body + pattern (clipped)
+    creatureBody(ctx, c, cx, cy, R, c.col, 0);
+    if (!sil) {
+        ctx.save();
+        creatureBody(ctx, c, cx, cy, R, 'rgba(0,0,0,0)', 0); ctx.clip();
+        const pc = c.patCol || dark;
+        switch (c.pattern) {
+            case 'spots': spots(ctx, cx, cy, pc, [-R * 0.55, R * 0.35, R * 0.16, R * 0.5, R * 0.25, R * 0.13, R * 0.2, R * 0.6, R * 0.1, -R * 0.2, -R * 0.55, R * 0.1]); break;
+            case 'moss': spots(ctx, cx, cy, pc, [-R * 0.7, -R * 0.5, R * 0.35, R * 0.6, -R * 0.6, R * 0.3, 0, -R * 0.95, R * 0.35, -R * 0.2, R * 0.7, R * 0.2]); break;
+            case 'cracks':
+                ctx.strokeStyle = pc; ctx.lineWidth = 2.6 * k; ctx.lineCap = 'round';
+                for (const p of [[-0.6, -0.2, -0.3, 0.1, -0.45, 0.45], [0.55, -0.4, 0.3, 0, 0.5, 0.35], [-0.1, 0.5, 0.15, 0.8]]) {
+                    ctx.beginPath(); ctx.moveTo(cx + p[0] * R, cy + p[1] * R);
+                    for (let i = 2; i < p.length; i += 2) ctx.lineTo(cx + p[i] * R, cy + p[i + 1] * R);
+                    ctx.stroke();
+                }
+                break;
+            case 'plates':
+                ctx.fillStyle = shade(c.col, 0.15);
+                ctx.beginPath(); ctx.arc(cx, cy - R * 1.4, R * 1.2, 0, Math.PI); ctx.fill();
+                ctx.strokeStyle = OUT; ctx.lineWidth = 2.5 * k; ctx.stroke();
+                break;
+            case 'rivets':
+                for (const p of [[-0.7, -0.65], [0.7, -0.65], [-0.7, 0.65], [0.7, 0.65]]) circ(ctx, cx + p[0] * R, cy + p[1] * R, 2.2 * k, pc);
+                ctx.fillStyle = 'rgba(0,0,0,0.15)'; ctx.fillRect(cx - R, cy + R * 0.25, R * 2, R * 0.1);
+                break;
+            case 'stripes':
+                ctx.fillStyle = pc;
+                for (let i = -2; i <= 2; i++) ctx.fillRect(cx - R * 1.3, cy + i * R * 0.42 - R * 0.07, R * 2.6, R * 0.14);
+                break;
+            case 'swirl':
+                ctx.strokeStyle = pc; ctx.lineWidth = 2.4 * k; ctx.beginPath();
+                for (let a = 0; a < TAU * 2; a += 0.2) { const r = R * a / (TAU * 2); const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r; if (a === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+                ctx.stroke(); break;
+            case 'needles':
+                ctx.strokeStyle = '#f2ead2'; ctx.lineWidth = 1.6 * k;
+                for (let i = 0; i < 14; i++) { const a = i / 14 * TAU, x = cx + Math.cos(a) * R * 0.7, y = cy + Math.sin(a) * R * 0.8; line(ctx, x, y, x + Math.cos(a) * 5 * k, y + Math.sin(a) * 5 * k, '#f2ead2', 1.6 * k); }
+                break;
+        }
+        highlight(ctx, cx - R * 0.4, cy - R * 0.5, R * 0.32, R * 0.17, 0.3);
+        ctx.restore();
+    }
+    creatureBody(ctx, c, cx, cy, R, 'rgba(0,0,0,0)', lw);
+    // ---- glow core
+    if (c.glow && !sil) {
+        circ(ctx, cx, cy + R * 0.35, R * 0.34, 'rgba(255,255,255,0.25)');
+        circ(ctx, cx, cy + R * 0.35, R * 0.22, c.glow, OUT, lw * 0.6);
+        circ(ctx, cx - R * 0.06, cy + R * 0.29, R * 0.07, '#ffffff');
+    }
+    // ---- top
+    const ty = c.body === 'tall' ? cy - R * 1.2 : c.body === 'diamond' ? cy - R * 1.15 : c.body === 'flat' ? cy - R * 0.62 : cy - R * 0.95;
+    switch (c.top) {
+        case 'antenna':
+            for (const s of [-1, 1]) { line(ctx, cx + s * R * 0.25, ty + R * 0.15, cx + s * R * 0.5, ty - R * 0.45, OUT, 3 * k); circ(ctx, cx + s * R * 0.5, ty - R * 0.48, 3.5 * k, topc === OUT ? '#b39ddb' : shade(c.col, 0.35), OUT, 2 * k); }
+            break;
+        case 'horns':
+            for (const s of [-1, 1]) poly(ctx, [cx + s * R * 0.35, ty + R * 0.2, cx + s * R * 0.9, ty - R * 0.55, cx + s * R * 0.7, ty + R * 0.3], c.topCol || '#f2e6cf', OUT, lw * 0.8);
+            break;
+        case 'spikes':
+            for (let i = -2; i <= 2; i++) poly(ctx, [cx + i * R * 0.32 - R * 0.13, ty + R * 0.25, cx + i * R * 0.36, ty - R * (0.45 - Math.abs(i) * 0.08), cx + i * R * 0.32 + R * 0.13, ty + R * 0.25], topc, OUT, lw * 0.7);
+            break;
+        case 'crown':
+            poly(ctx, [cx - R * 0.55, ty + R * 0.2, cx - R * 0.62, ty - R * 0.5, cx - R * 0.28, ty - R * 0.15, cx, ty - R * 0.62, cx + R * 0.28, ty - R * 0.15, cx + R * 0.62, ty - R * 0.5, cx + R * 0.55, ty + R * 0.2], c.topCol || '#ffd166', OUT, lw * 0.8);
+            if (!sil) circ(ctx, cx, ty - R * 0.1, R * 0.08, '#ff5c7a');
+            break;
+        case 'crystal':
+            poly(ctx, [cx - R * 0.15, ty + R * 0.25, cx - R * 0.05, ty - R * 0.7, cx + R * 0.25, ty + R * 0.2], c.topCol || '#dff6ff', OUT, lw * 0.7);
+            poly(ctx, [cx - R * 0.55, ty + R * 0.3, cx - R * 0.5, ty - R * 0.3, cx - R * 0.2, ty + R * 0.25], c.topCol || '#bfeaff', OUT, lw * 0.7);
+            poly(ctx, [cx + R * 0.3, ty + R * 0.3, cx + R * 0.55, ty - R * 0.35, cx + R * 0.6, ty + R * 0.3], c.topCol || '#bfeaff', OUT, lw * 0.7);
+            break;
+        case 'flame':
+            if (!sil) {
+                ctx.beginPath(); ctx.moveTo(cx - R * 0.45, ty + R * 0.3);
+                ctx.quadraticCurveTo(cx - R * 0.5, ty - R * 0.3, cx - R * 0.15, ty - R * 0.25); ctx.quadraticCurveTo(cx - R * 0.05, ty - R * 0.9, cx + R * 0.2, ty - R * 0.35);
+                ctx.quadraticCurveTo(cx + R * 0.45, ty - R * 0.6, cx + R * 0.45, ty + R * 0.3); ctx.closePath();
+                ctx.fillStyle = '#ffb02e'; ctx.fill(); ctx.lineWidth = lw * 0.6; ctx.strokeStyle = '#a3200f'; ctx.stroke();
+                ell(ctx, cx, ty + R * 0.05, R * 0.15, R * 0.25, '#fff2a8');
+            }
+            break;
+        case 'halo':
+            ctx.save(); ctx.lineWidth = 3.5 * k; ctx.strokeStyle = OUT; ctx.beginPath(); ctx.ellipse(cx, ty - R * 0.35, R * 0.55, R * 0.16, 0, 0, TAU); ctx.stroke();
+            ctx.lineWidth = 2 * k; ctx.strokeStyle = c.topCol || '#fff3a0'; ctx.stroke(); ctx.restore();
+            break;
+        case 'cap':
+            ctx.beginPath(); ctx.ellipse(cx, ty + R * 0.15, R * 1.05, R * 0.6, 0, Math.PI, TAU); ctx.closePath();
+            ctx.fillStyle = c.topCol || '#e2483b'; ctx.fill(); ctx.lineWidth = lw; ctx.strokeStyle = OUT; ctx.stroke();
+            if (!sil) spots(ctx, cx, ty, '#fff4e0', [-R * 0.5, -R * 0.05, R * 0.13, R * 0.1, -R * 0.25, R * 0.15, R * 0.55, R * 0.02, R * 0.11]);
+            break;
+        case 'antlers':
+            for (const s of [-1, 1]) {
+                ctx.lineCap = 'round';
+                const a = (x1: number, y1: number, x2: number, y2: number) => { line(ctx, cx + s * x1 * R, ty + y1 * R, cx + s * x2 * R, ty + y2 * R, OUT, 6 * k); line(ctx, cx + s * x1 * R, ty + y1 * R, cx + s * x2 * R, ty + y2 * R, c.topCol || '#c9a57a', 3 * k); };
+                a(0.3, 0.2, 0.7, -0.6); a(0.55, -0.25, 1.0, -0.45); a(0.62, -0.42, 0.55, -0.85);
+            }
+            break;
+        case 'dish':
+            line(ctx, cx, ty + R * 0.2, cx, ty - R * 0.3, OUT, 3 * k);
+            ctx.beginPath(); ctx.ellipse(cx, ty - R * 0.4, R * 0.42, R * 0.2, -0.3, 0, Math.PI); ctx.closePath();
+            ctx.fillStyle = c.topCol || '#cfd8dc'; ctx.fill(); ctx.lineWidth = lw * 0.7; ctx.strokeStyle = OUT; ctx.stroke();
+            break;
+        case 'flower':
+            for (let i = 0; i < 5; i++) { const a = i / 5 * TAU; circ(ctx, cx + Math.cos(a) * R * 0.22, ty - R * 0.1 + Math.sin(a) * R * 0.22, R * 0.16, c.topCol || '#ff7eb6', OUT, lw * 0.5); }
+            circ(ctx, cx, ty - R * 0.1, R * 0.13, '#ffd166', OUT, lw * 0.5);
+            break;
+        case 'mohawk':
+            for (let i = -2; i <= 2; i++) poly(ctx, [cx + i * R * 0.18 - R * 0.1, ty + R * 0.2, cx + i * R * 0.22, ty - R * 0.5, cx + i * R * 0.18 + R * 0.1, ty + R * 0.2], c.topCol || '#ff5c5c', OUT, lw * 0.5);
+            break;
+    }
+    // ---- eyes
+    const ey = c.body === 'flat' ? cy - R * 0.15 : cy - R * 0.2;
+    const er = (c.eyeStyle === 'big' ? 9 : 6) * k * (c.size || 1);
+    const ec = c.eyeCol;
+    const eyeAt = (x: number, y: number, r: number) => {
+        if (c.eyeStyle === 'glow') { circ(ctx, x, y, r, ec || '#fff07a', OUT, lw * 0.6); circ(ctx, x, y, r * 0.4, '#ffffff'); }
+        else eye(ctx, x, y, r, 0.2, 0.15, 0.5);
+    };
+    if (c.eyeStyle === 'visor') {
+        rrFill(ctx, cx - R * 0.75, ey - R * 0.2, R * 1.5, R * 0.42, R * 0.2, '#1c2027', OUT, lw * 0.7);
+        if (!sil) { const vc = ec || '#ff4d4d'; rrFill(ctx, cx - R * 0.55, ey - R * 0.08, R * 1.1, R * 0.17, R * 0.08, vc, undefined); circ(ctx, cx + R * 0.15, ey, R * 0.12, '#ffffff'); }
+    } else if (c.eyeStyle === 'frog') {
+        for (const s of [-1, 1]) { circ(ctx, cx + s * R * 0.45, cy - R * 0.62, er * 1.2, c.col, OUT, lw * 0.8); eye(ctx, cx + s * R * 0.45, cy - R * 0.66, er * 0.9, 0.15, 0.1, 0.55); }
+    } else if (c.eyes === 1) eyeAt(cx, ey, er * 1.45);
+    else if (c.eyes === 2) { eyeAt(cx - R * 0.36, ey, er); eyeAt(cx + R * 0.36, ey, er); }
+    else if (c.eyes === 3) { eyeAt(cx - R * 0.42, ey + R * 0.05, er * 0.85); eyeAt(cx + R * 0.42, ey + R * 0.05, er * 0.85); eyeAt(cx, ey - R * 0.3, er); }
+    else if (c.eyes === 4) { for (const p of [[-0.45, 0], [0.45, 0], [-0.2, -0.35], [0.2, -0.35]]) eyeAt(cx + p[0] * R, ey + p[1] * R, er * 0.72); }
+    else if (c.eyes >= 5) { eyeAt(cx, ey - R * 0.05, er * 1.2); for (const p of [[-0.6, 0.05], [0.6, 0.05], [-0.38, -0.45], [0.38, -0.45]]) eyeAt(cx + p[0] * R, ey + p[1] * R, er * 0.6); }
+    if (c.eyeStyle === 'angry' && c.eyes >= 2) {
+        line(ctx, cx - R * 0.68, ey - er * 1.5, cx - R * 0.15, ey - er * 0.8, OUT, 3 * k);
+        line(ctx, cx + R * 0.68, ey - er * 1.5, cx + R * 0.15, ey - er * 0.8, OUT, 3 * k);
+    }
+    // ---- mouth
+    const my = cy + R * 0.42;
+    switch (c.mouth) {
+        case 'teeth': teeth(ctx, cx, my, R * 0.7, R * 0.28); break;
+        case 'maw': teeth(ctx, cx, my, R * 1.05, R * 0.45); break;
+        case 'fangs':
+            line(ctx, cx - R * 0.3, my - R * 0.05, cx + R * 0.3, my - R * 0.05, OUT, 2.5 * k);
+            poly(ctx, [cx - R * 0.22, my - R * 0.05, cx - R * 0.14, my + R * 0.25, cx - R * 0.06, my - R * 0.05], '#ffffff', OUT, 1.5 * k);
+            poly(ctx, [cx + R * 0.06, my - R * 0.05, cx + R * 0.14, my + R * 0.25, cx + R * 0.22, my - R * 0.05], '#ffffff', OUT, 1.5 * k);
+            break;
+        case 'smile': ctx.beginPath(); ctx.arc(cx, my - R * 0.15, R * 0.28, 0.25, Math.PI - 0.25); ctx.lineWidth = 2.6 * k; ctx.strokeStyle = OUT; ctx.stroke(); break;
+        case 'tube': rrFill(ctx, cx - R * 0.18, my - R * 0.15, R * 0.36, R * 0.5, R * 0.14, shade(c.col, -0.15), OUT, 2.2 * k); ell(ctx, cx, my + R * 0.35, R * 0.17, R * 0.1, '#1a1a1a', OUT, 1.5 * k); break;
+        case 'beak': poly(ctx, [cx - R * 0.2, my - R * 0.2, cx + R * 0.2, my - R * 0.2, cx, my + R * 0.45], '#f2b134', OUT, 2.2 * k); break;
+        case 'grill': rrFill(ctx, cx - R * 0.4, my - R * 0.1, R * 0.8, R * 0.3, R * 0.06, '#22262c', OUT, 2 * k); if (!sil) for (let i = 1; i < 4; i++) line(ctx, cx - R * 0.4 + i * R * 0.2, my - R * 0.06, cx - R * 0.4 + i * R * 0.2, my + R * 0.16, '#6d7680', 1.5 * k); break;
+        case 'tusks':
+            teeth(ctx, cx, my, R * 0.55, R * 0.24);
+            for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(cx + s * R * 0.3, my); ctx.quadraticCurveTo(cx + s * R * 0.75, my + R * 0.45, cx + s * R * 0.45, my + R * 0.75); ctx.lineCap = 'round'; ctx.lineWidth = 7 * k; ctx.strokeStyle = OUT; ctx.stroke(); ctx.lineWidth = 4 * k; ctx.strokeStyle = '#f5ecd7'; ctx.stroke(); }
+            break;
+    }
+    // ---- in front
+    if (c.side === 'claws') {
+        for (const s of [-1, 1]) {
+            const x = cx + s * R * 1.15, y = cy + R * 0.25;
+            circ(ctx, x, y, R * 0.32, side, OUT, lw * 0.8);
+            poly(ctx, [x + s * R * 0.1, y - R * 0.15, x + s * R * 0.55, y - R * 0.5, x + s * R * 0.3, y], side, OUT, lw * 0.6);
+        }
+    } else if (c.side === 'arms') {
+        for (const s of [-1, 1]) {
+            ell(ctx, cx + s * R * 1.08, cy + R * 0.15, R * 0.3, R * 0.5, side, OUT, lw * 0.8, s * 0.3);
+            circ(ctx, cx + s * R * 1.22, cy + R * 0.62, R * 0.24, dark, OUT, lw * 0.7);
+        }
+    }
+    if (c.shield) {
+        ctx.save(); ctx.translate(cx - R * 0.95, cy + R * 0.15);
+        poly(ctx, [0, -R * 0.75, R * 0.45, -R * 0.55, R * 0.42, R * 0.3, 0, R * 0.75, -R * 0.42, R * 0.3, -R * 0.45, -R * 0.55], c.shield, OUT, lw * 0.8);
+        if (!sil) line(ctx, 0, -R * 0.5, 0, R * 0.5, 'rgba(255,255,255,0.6)', 2 * k);
+        ctx.restore();
+    }
+}
+
+const CREATURES: { [sprite: string]: Creature } = {
+    // ---- frozen rift
+    e_icebomb: { w: 56, h: 60, body: 'round', col: '#9fdcf5', pattern: 'cracks', patCol: '#5fa8cf', eyes: 2, mouth: 'smile', top: 'crystal' },
+    e_frostjugg: { w: 150, h: 140, body: 'flat', col: '#8db5d6', size: 1.05, pattern: 'plates', eyes: 2, eyeStyle: 'angry', mouth: 'tusks', top: 'crystal', side: 'legs' },
+    e_frostqueen: { w: 140, h: 140, body: 'diamond', col: '#a9e6ff', size: 1.05, pattern: 'cracks', patCol: '#6fb6dc', eyes: 3, mouth: 'none', top: 'crown', topCol: '#dff6ff', side: 'wings' },
+    e_frostboss: { w: 210, h: 200, body: 'tall', col: '#7aaee0', size: 1.08, pattern: 'cracks', patCol: '#d8f3ff', eyes: 1, eyeStyle: 'glow', eyeCol: '#e9fdff', mouth: 'maw', top: 'crystal', side: 'arms', glow: '#c9f6ff' },
+    // ---- molten forge
+    e_lavaworm: { w: 72, h: 56, body: 'segment', col: '#d9542b', pattern: 'cracks', patCol: '#ffb02e', eyes: 2, mouth: 'fangs', top: 'flame' },
+    e_forgejugg: { w: 150, h: 140, body: 'box', col: '#5d4b45', pattern: 'cracks', patCol: '#ff8a2e', eyes: 2, eyeStyle: 'glow', eyeCol: '#ffd166', mouth: 'grill', top: 'spikes', topCol: '#3a2e2a', side: 'arms', glow: '#ffb02e' },
+    e_flamequeen: { w: 140, h: 140, body: 'tall', col: '#ff7a2e', pattern: 'stripes', patCol: '#c9431a', eyes: 4, mouth: 'beak', top: 'antenna', side: 'wings', sideCol: 'rgba(255,190,90,0.85)' },
+    e_forgeboss: { w: 210, h: 200, body: 'round', col: '#3f3633', size: 1.05, pattern: 'rivets', patCol: '#8d7b72', eyes: 3, eyeStyle: 'glow', eyeCol: '#ffb02e', mouth: 'maw', top: 'flame', side: 'legs', glow: '#ff7a1a' },
+    // ---- void harbor
+    e_blinker: { w: 54, h: 60, body: 'diamond', col: '#8a5cff', eyes: 1, mouth: 'none', side: 'fins', aura: '#78f0ff' },
+    e_voidjugg: { w: 150, h: 140, body: 'blob', col: '#4b2f8f', size: 1.05, pattern: 'spots', patCol: '#3a2270', eyes: 5, mouth: 'teeth', top: 'horns', topCol: '#c9b8ff', side: 'tentacles' },
+    e_voidqueen: { w: 140, h: 140, body: 'jelly', col: '#b07cff', size: 1.05, pattern: 'spots', patCol: '#d8b8ff', eyes: 2, mouth: 'smile', top: 'halo', topCol: '#9ff8ff', side: 'tentacles', sideCol: '#9a6be6' },
+    e_voidboss: { w: 210, h: 200, body: 'round', col: '#2c1d5c', size: 1.05, eyes: 1, eyeStyle: 'big', mouth: 'maw', top: 'spikes', topCol: '#1b1240', side: 'tentacles', aura: '#78f0ff', rings: '#9ff8ff' },
+    // ---- toxic marsh
+    e_healer: { w: 58, h: 66, body: 'tall', col: '#efe1c0', size: 0.9, eyes: 2, mouth: 'smile', top: 'cap', topCol: '#58c46a', aura: '#7dff8a' },
+    e_gasbag: { w: 62, h: 62, body: 'round', col: '#a6e35f', pattern: 'spots', patCol: '#7cc23d', eyes: 2, mouth: 'tube', top: 'antenna' },
+    e_hopper: { w: 64, h: 56, body: 'flat', col: '#4caf50', pattern: 'spots', patCol: '#2e8b3e', eyes: 2, eyeStyle: 'frog', mouth: 'smile', side: 'legs' },
+    e_mosquito: { w: 56, h: 56, body: 'tall', col: '#7a5a8c', size: 0.8, eyes: 2, eyeStyle: 'big', mouth: 'beak', side: 'wings' },
+    e_frogking: { w: 150, h: 140, body: 'flat', col: '#2e8b84', size: 1.1, pattern: 'spots', patCol: '#2a6b28', eyes: 2, eyeStyle: 'frog', mouth: 'teeth', top: 'crown', side: 'legs' },
+    e_blightmother: { w: 140, h: 140, body: 'blob', col: '#7c8f2a', size: 1.05, pattern: 'moss', patCol: '#b5c94a', eyes: 3, mouth: 'tube', top: 'cap', topCol: '#9b4dbf', side: 'tentacles' },
+    e_marshlord: { w: 210, h: 200, body: 'tall', col: '#2f6b3a', size: 1.08, pattern: 'moss', patCol: '#4f9a4a', eyes: 2, eyeStyle: 'glow', eyeCol: '#e8ff6b', mouth: 'maw', top: 'antlers', side: 'arms' },
+    // ---- dune ruins
+    e_burrower: { w: 60, h: 58, body: 'round', col: '#d9a85b', pattern: 'stripes', patCol: '#b8863f', eyes: 2, mouth: 'fangs', top: 'horns' },
+    e_scorpion: { w: 68, h: 60, body: 'flat', col: '#c47a3a', pattern: 'plates', eyes: 2, eyeStyle: 'angry', mouth: 'fangs', side: 'claws', tail: 'stinger' },
+    e_dustwhirl: { w: 54, h: 54, body: 'round', col: '#e6c98a', pattern: 'swirl', patCol: '#b8975a', eyes: 2, mouth: 'smile' },
+    e_cactus: { w: 56, h: 70, body: 'tall', col: '#5a9e4b', pattern: 'needles', eyes: 2, mouth: 'smile', top: 'flower' },
+    e_sandworm: { w: 160, h: 140, body: 'segment', col: '#b8834a', size: 1.05, pattern: 'stripes', patCol: '#94653a', eyes: 4, mouth: 'maw', top: 'spikes', topCol: '#7a5230' },
+    e_scorpqueen: { w: 140, h: 140, body: 'flat', col: '#a0522d', pattern: 'plates', eyes: 4, mouth: 'fangs', top: 'crown', side: 'claws', tail: 'stinger' },
+    e_dunetyrant: { w: 210, h: 200, body: 'box', col: '#c9a56b', size: 1.02, pattern: 'stripes', patCol: '#3f7fbf', eyes: 2, eyeStyle: 'glow', eyeCol: '#7ff0ff', mouth: 'grill', top: 'crown', topCol: '#ffd166', side: 'arms' },
+    // ---- scrap ruins
+    e_sentry: { w: 60, h: 64, body: 'box', col: '#7d8a96', size: 0.85, pattern: 'rivets', patCol: '#4d5761', eyes: 1, eyeStyle: 'visor', mouth: 'none', top: 'dish', side: 'legs' },
+    e_drone: { w: 58, h: 52, body: 'round', col: '#c7cdd4', size: 0.85, eyes: 1, eyeStyle: 'visor', mouth: 'none', top: 'antenna', side: 'thrusters' },
+    e_shieldbot: { w: 80, h: 80, body: 'box', col: '#5c7a99', pattern: 'rivets', patCol: '#3c5269', eyes: 1, eyeStyle: 'visor', eyeCol: '#6fe3ff', mouth: 'grill', side: 'arms', shield: '#9fb8cf' },
+    e_spark: { w: 46, h: 52, body: 'diamond', col: '#ffd23f', size: 0.8, eyes: 2, eyeStyle: 'angry', mouth: 'none', top: 'mohawk', topCol: '#7fe7ff', aura: '#7fe7ff' },
+    e_mech: { w: 150, h: 140, body: 'box', col: '#56606b', pattern: 'rivets', patCol: '#2f363d', eyes: 1, eyeStyle: 'visor', eyeCol: '#ff4d4d', mouth: 'grill', top: 'spikes', topCol: '#3c444c', side: 'arms', glow: '#7fe7ff' },
+    e_factory: { w: 140, h: 140, body: 'round', col: '#8a939c', pattern: 'rivets', patCol: '#5a636c', eyes: 3, eyeStyle: 'glow', eyeCol: '#ffd166', mouth: 'grill', top: 'dish', side: 'thrusters' },
+    e_overlord: { w: 210, h: 200, body: 'diamond', col: '#3f4a57', size: 1.05, pattern: 'rivets', patCol: '#7fe7ff', eyes: 1, eyeStyle: 'big', mouth: 'grill', top: 'halo', topCol: '#7fe7ff', side: 'tentacles', sideCol: '#5c6b7a', glow: '#ff4d4d' },
+    // ---- star abyss
+    e_orbiter: { w: 60, h: 54, body: 'round', col: '#5ad1ff', size: 0.85, eyes: 2, mouth: 'smile', rings: '#ffe08a' },
+    e_starling: { w: 40, h: 40, body: 'spiky', col: '#ffe8a3', size: 0.7, eyes: 2, mouth: 'none' },
+    e_nebulaspore: { w: 58, h: 60, body: 'jelly', col: '#ff8ad8', size: 0.9, eyes: 2, mouth: 'smile', top: 'halo', aura: '#ffb3ec' },
+    e_starbeast: { w: 150, h: 140, body: 'spiky', col: '#2b3a7a', size: 1.05, pattern: 'spots', patCol: '#ffe08a', eyes: 3, eyeStyle: 'angry', mouth: 'maw', side: 'legs' },
+    e_nebulaqueen: { w: 140, h: 140, body: 'jelly', col: '#d96cff', size: 1.05, pattern: 'swirl', patCol: '#ffb3ff', eyes: 3, mouth: 'smile', top: 'crown', side: 'wings', sideCol: 'rgba(255,190,255,0.8)' },
+    e_starcore: { w: 210, h: 200, body: 'round', col: '#ffcf4d', size: 1.0, pattern: 'swirl', patCol: '#ff9f2e', eyes: 1, eyeStyle: 'big', mouth: 'teeth', top: 'spikes', topCol: '#ff7a1a', rings: '#9ff8ff', aura: '#fff3a0' },
+};
+
+// ---------------------------------------------------------------- extra item glyphs (each item has its own icon)
+const GLYPHS2: { [k: string]: (ctx: C2D) => void } = {
+    exo: ctx => { rrFill(ctx, 16, 12, 32, 40, 8, W, OUT, 4); line(ctx, 32, 14, 32, 50, OUT, 3); for (let i = 0; i < 3; i++) line(ctx, 18, 22 + i * 10, 46, 22 + i * 10, OUT, 3); rrFill(ctx, 6, 16, 10, 22, 4, W, OUT, 3); rrFill(ctx, 48, 16, 10, 22, 4, W, OUT, 3); },
+    heartplus: ctx => { GLYPHS.heart(ctx); poly(ctx, [29, 24, 35, 24, 35, 30, 41, 30, 41, 36, 35, 36, 35, 42, 29, 42, 29, 36, 23, 36, 23, 30, 29, 30], OUT, undefined); },
+    crosshair: ctx => { circ(ctx, 32, 32, 16, undefined, OUT, 5); circ(ctx, 32, 32, 16, undefined, W, 2.5); for (const [x1, y1, x2, y2] of [[32, 4, 32, 20], [32, 44, 32, 60], [4, 32, 20, 32], [44, 32, 60, 32]]) { line(ctx, x1, y1, x2, y2, OUT, 7); line(ctx, x1, y1, x2, y2, W, 3); } circ(ctx, 32, 32, 4, W, OUT, 2.5); },
+    sprout: ctx => { poly(ctx, [16, 36, 48, 36, 44, 56, 20, 56], W, OUT, 4); line(ctx, 32, 36, 32, 18, OUT, 4); ell(ctx, 22, 18, 9, 5, W, OUT, 3, 0.5); ell(ctx, 42, 14, 9, 5, W, OUT, 3, -0.5); },
+    gyro: ctx => { circ(ctx, 32, 32, 7, W, OUT, 3.5); ctx.save(); ctx.lineWidth = 4; ctx.strokeStyle = OUT; for (const r of [-0.6, 0.6]) { ctx.beginPath(); ctx.ellipse(32, 32, 24, 9, r, 0, TAU); ctx.stroke(); } ctx.lineWidth = 2; ctx.strokeStyle = W; for (const r of [-0.6, 0.6]) { ctx.beginPath(); ctx.ellipse(32, 32, 24, 9, r, 0, TAU); ctx.stroke(); } ctx.restore(); },
+    ticket: ctx => { poly(ctx, [8, 18, 56, 18, 56, 28, 52, 32, 56, 36, 56, 46, 8, 46, 8, 36, 12, 32, 8, 28], W, OUT, 4); for (let y = 22; y < 44; y += 6) line(ctx, 40, y, 40, y + 3, OUT, 2.5); line(ctx, 16, 28, 32, 28, OUT, 3); line(ctx, 16, 36, 28, 36, OUT, 3); },
+    bubble: ctx => { circ(ctx, 32, 32, 23, W, OUT, 4); ctx.save(); ctx.globalAlpha = 0.5; circ(ctx, 32, 32, 15, undefined, OUT, 2.5); ctx.restore(); ell(ctx, 23, 22, 6, 3.5, OUT, undefined, 0, -0.6); },
+    mail: ctx => { poly(ctx, [18, 10, 46, 10, 56, 22, 48, 26, 48, 54, 16, 54, 16, 26, 8, 22], W, OUT, 4); ctx.save(); ctx.strokeStyle = OUT; ctx.lineWidth = 1.8; for (let y = 28; y < 52; y += 6) for (let x = 20; x < 46; x += 6) { ctx.beginPath(); ctx.arc(x + 3, y, 2.5, 0, Math.PI); ctx.stroke(); } ctx.restore(); },
+    oilcan: ctx => { rrFill(ctx, 12, 26, 30, 28, 4, W, OUT, 4); poly(ctx, [42, 32, 58, 20, 60, 24, 44, 40], W, OUT, 3.5); rrFill(ctx, 20, 18, 14, 8, 2, W, OUT, 3); ctx.beginPath(); ctx.moveTo(60, 28); ctx.quadraticCurveTo(64, 36, 60, 38); ctx.quadraticCurveTo(56, 36, 60, 28); ctx.fillStyle = OUT; ctx.fill(); },
+    tooth: ctx => { ctx.beginPath(); ctx.moveTo(14, 18); ctx.quadraticCurveTo(14, 8, 24, 10); ctx.quadraticCurveTo(32, 14, 40, 10); ctx.quadraticCurveTo(50, 8, 50, 18); ctx.quadraticCurveTo(50, 30, 44, 36); ctx.lineTo(42, 54); ctx.lineTo(36, 54); ctx.lineTo(32, 40); ctx.lineTo(28, 54); ctx.lineTo(22, 54); ctx.lineTo(20, 36); ctx.quadraticCurveTo(14, 30, 14, 18); ctx.closePath(); ctx.fillStyle = W; ctx.fill(); ctx.lineWidth = 4; ctx.strokeStyle = OUT; ctx.stroke(); },
+    bat: ctx => { poly(ctx, [32, 26, 40, 20, 46, 24, 58, 18, 54, 34, 46, 32, 40, 40, 32, 34, 24, 40, 18, 32, 10, 34, 6, 18, 18, 24, 24, 20], W, OUT, 3.5); circ(ctx, 29, 28, 1.8, OUT); circ(ctx, 35, 28, 1.8, OUT); },
+    belt: ctx => { ctx.save(); ctx.translate(32, 32); ctx.rotate(-0.5); rrFill(ctx, -28, -6, 56, 12, 4, W, OUT, 3.5); for (let i = -2; i <= 2; i++) rrFill(ctx, i * 10 - 3, -16, 6, 12, 3, W, OUT, 2.5); ctx.restore(); },
+    vortex: ctx => { circ(ctx, 32, 32, 24, W, OUT, 4); ctx.save(); ctx.strokeStyle = OUT; ctx.lineWidth = 3; ctx.beginPath(); for (let a = 0; a < TAU * 2.2; a += 0.15) { const r = 2 + a * 1.4; const x = 32 + Math.cos(a) * r, y = 32 + Math.sin(a) * r; if (a === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } ctx.stroke(); ctx.restore(); },
+    tri: ctx => { for (const [x, y, a] of [[18, 40, -0.5], [32, 34, 0], [46, 40, 0.5]]) { ctx.save(); ctx.translate(x, y); ctx.rotate(a); poly(ctx, [-5, 14, -5, -4, 0, -14, 5, -4, 5, 14], W, OUT, 3); ctx.restore(); } },
+    speedo: ctx => { ctx.beginPath(); ctx.arc(32, 40, 24, Math.PI, 0); ctx.closePath(); ctx.fillStyle = W; ctx.fill(); ctx.lineWidth = 4; ctx.strokeStyle = OUT; ctx.stroke(); for (let i = 0; i <= 4; i++) { const a = Math.PI + i * Math.PI / 4; line(ctx, 32 + Math.cos(a) * 18, 40 + Math.sin(a) * 18, 32 + Math.cos(a) * 23, 40 + Math.sin(a) * 23, OUT, 2.5); } line(ctx, 32, 40, 48, 26, OUT, 4); circ(ctx, 32, 40, 4, OUT); },
+    axe: ctx => { line(ctx, 18, 56, 40, 14, OUT, 7); line(ctx, 18, 56, 40, 14, W, 3); ctx.beginPath(); ctx.moveTo(36, 10); ctx.quadraticCurveTo(58, 10, 58, 32); ctx.lineTo(42, 26); ctx.closePath(); ctx.fillStyle = W; ctx.fill(); ctx.lineWidth = 4; ctx.strokeStyle = OUT; ctx.stroke(); },
+    trio: ctx => { for (const [x, y] of [[20, 24], [44, 24], [32, 44]]) { circ(ctx, x, y, 8, W, OUT, 3); line(ctx, x - 12, y - 8, x + 12, y - 8, OUT, 3); } },
+    flag: ctx => { line(ctx, 14, 8, 14, 58, OUT, 5); poly(ctx, [14, 10, 54, 14, 44, 24, 54, 34, 14, 32], W, OUT, 4); poly(ctx, [24, 18, 28, 14, 32, 18, 28, 26], OUT, undefined); },
+    gem: ctx => { poly(ctx, [18, 14, 46, 14, 56, 26, 32, 56, 8, 26], W, OUT, 4); line(ctx, 8, 26, 56, 26, OUT, 3); line(ctx, 22, 26, 32, 56, OUT, 2.5); line(ctx, 42, 26, 32, 56, OUT, 2.5); line(ctx, 24, 14, 22, 26, OUT, 2.5); line(ctx, 40, 14, 42, 26, OUT, 2.5); },
+};
+for (const k in GLYPHS2) GLYPHS[k] = GLYPHS2[k];
+
 export const GLYPH_NAMES = Object.keys(GLYPHS);
 
 // ---------------------------------------------------------------- registration
@@ -729,7 +1072,10 @@ export function registerArt() {
     // stage variants: recolored copies of the drawings above plus an ice / lava / void overlay
     for (const id in ENEMIES) {
         const def = ENEMIES[id];
-        if (!def.art || ENEMY_DRAW[def.sprite]) continue;
+        if (ENEMY_DRAW[def.sprite]) continue;
+        const cr = CREATURES[def.sprite];
+        if (cr) { Atlas.add(def.sprite, cr.w, cr.h, (ctx, w, h, sil) => drawCreature(ctx, cr, w, h, sil), true); continue; }
+        if (!def.art) continue;
         const base = ENEMY_DRAW[def.art.base];
         if (!base) { console.warn('[Art] missing base drawing', def.art.base); continue; }
         const art = def.art;
@@ -942,7 +1288,7 @@ export function registerArt() {
  * Arena floor texture. `res` = texture pixels per world unit (sharper floor on dense phone screens).
  * `pools` are lava pools (world coordinates, origin at the arena center, y up).
  */
-export function drawArena(W: number, H: number, border: number, res: number, th: ArenaTheme, pools: { x: number; y: number; r: number }[] = []): HTMLCanvasElement {
+export function drawArena(W: number, H: number, border: number, res: number, th: ArenaTheme, pools: { x: number; y: number; r: number }[] = [], poolKind: 'lava' | 'mud' = 'lava'): HTMLCanvasElement {
     const c = document.createElement('canvas');
     const total = { w: W + border * 2, h: H + border * 2 };
     c.width = Math.round(total.w * res); c.height = Math.round(total.h * res);
@@ -968,6 +1314,32 @@ export function drawArena(W: number, H: number, border: number, res: number, th:
         ctx.strokeStyle = 'rgba(120,200,255,0.07)'; ctx.lineWidth = 2;
         for (let gx = x0; gx <= x0 + W; gx += 120) { ctx.beginPath(); ctx.moveTo(gx, y0); ctx.lineTo(gx, y0 + H); ctx.stroke(); }
         for (let gy = y0; gy <= y0 + H; gy += 120) { ctx.beginPath(); ctx.moveTo(x0, gy); ctx.lineTo(x0 + W, gy); ctx.stroke(); }
+    }
+    if (th.deco === 'sand') {
+        // dunes: wind ripples
+        ctx.strokeStyle = 'rgba(150,100,40,0.16)'; ctx.lineWidth = 3;
+        for (let i = 0; i < 60; i++) {
+            const px = x0 + rnd() * W, py = y0 + rnd() * H, len = 80 + rnd() * 140;
+            ctx.beginPath(); ctx.moveTo(px, py);
+            ctx.bezierCurveTo(px + len * 0.3, py - 10, px + len * 0.6, py + 10, px + len, py);
+            ctx.stroke();
+        }
+    }
+    if (th.deco === 'metal') {
+        // scrap ruins: floor plates, rivets and hazard stripes
+        ctx.strokeStyle = 'rgba(0,0,0,0.28)'; ctx.lineWidth = 3;
+        for (let gx = x0; gx <= x0 + W; gx += 160) { ctx.beginPath(); ctx.moveTo(gx, y0); ctx.lineTo(gx, y0 + H); ctx.stroke(); }
+        for (let gy = y0; gy <= y0 + H; gy += 160) { ctx.beginPath(); ctx.moveTo(x0, gy); ctx.lineTo(x0 + W, gy); ctx.stroke(); }
+        ctx.fillStyle = 'rgba(210,220,230,0.25)';
+        for (let gx = x0; gx <= x0 + W; gx += 160) for (let gy = y0; gy <= y0 + H; gy += 160) for (const [ox, oy] of [[10, 10], [-10, 10], [10, -10], [-10, -10]]) { ctx.beginPath(); ctx.arc(gx + ox, gy + oy, 2.5, 0, TAU); ctx.fill(); }
+        for (let i = 0; i < 7; i++) {
+            const px = x0 + 80 + rnd() * (W - 260), py = y0 + 80 + rnd() * (H - 120);
+            ctx.save(); ctx.beginPath(); ctx.rect(px, py, 180, 26); ctx.clip();
+            ctx.fillStyle = 'rgba(255,200,40,0.35)'; ctx.fillRect(px, py, 180, 26);
+            ctx.fillStyle = 'rgba(20,20,20,0.45)';
+            for (let k = -2; k < 12; k++) { ctx.beginPath(); ctx.moveTo(px + k * 22, py + 26); ctx.lineTo(px + k * 22 + 11, py + 26); ctx.lineTo(px + k * 22 + 37, py); ctx.lineTo(px + k * 22 + 26, py); ctx.closePath(); ctx.fill(); }
+            ctx.restore();
+        }
     }
     if (th.deco === 'ice') {
         // frozen rift: cracks in the ice
@@ -1009,6 +1381,13 @@ export function drawArena(W: number, H: number, border: number, res: number, th:
             poly(ctx, [px, py - s * 1.6, px + s * 0.6, py, px, py + s * 0.3, px - s * 0.6, py], th.tuft, 'rgba(40,70,100,0.6)', 1.2);
         } else if (th.deco === 'ember') {
             circ(ctx, px, py, 1.5 + rnd() * 2, th.tuft);
+        } else if (th.deco === 'sand' || th.deco === 'metal') {
+            circ(ctx, px, py, 1.2 + rnd() * 1.6, th.tuft);
+        } else if (th.deco === 'stars') {
+            const s2 = 2 + rnd() * 3;
+            ctx.fillStyle = th.tuft;
+            ctx.beginPath(); ctx.moveTo(px, py - s2 * 2); ctx.lineTo(px + s2 * 0.5, py); ctx.lineTo(px, py + s2 * 2); ctx.lineTo(px - s2 * 0.5, py); ctx.closePath(); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(px - s2 * 2, py); ctx.lineTo(px, py + s2 * 0.5); ctx.lineTo(px + s2 * 2, py); ctx.lineTo(px, py - s2 * 0.5); ctx.closePath(); ctx.fill();
         } else {
             circ(ctx, px, py, 3 + rnd() * 2, 'rgba(110,240,255,0.12)');
             circ(ctx, px, py, 1.2 + rnd(), th.tuft);
@@ -1018,7 +1397,8 @@ export function drawArena(W: number, H: number, border: number, res: number, th:
     for (const p of pools) {
         const px = total.w / 2 + p.x, py = total.h / 2 - p.y; // world y is up, canvas y is down
         const lg = ctx.createRadialGradient(px, py, p.r * 0.15, px, py, p.r);
-        lg.addColorStop(0, '#fff2a8'); lg.addColorStop(0.35, '#ffb02e'); lg.addColorStop(0.8, '#ff4d17'); lg.addColorStop(1, '#a3200f');
+        if (poolKind === 'mud') { lg.addColorStop(0, '#6b5a2e'); lg.addColorStop(0.7, '#4c4222'); lg.addColorStop(1, '#2f2a16'); }
+        else { lg.addColorStop(0, '#fff2a8'); lg.addColorStop(0.35, '#ffb02e'); lg.addColorStop(0.8, '#ff4d17'); lg.addColorStop(1, '#a3200f'); }
         ctx.beginPath();
         for (let k = 0; k <= 18; k++) {
             const a = k / 18 * TAU, rr2 = p.r * (0.9 + 0.1 * Math.sin(a * 3 + p.x));
@@ -1027,8 +1407,9 @@ export function drawArena(W: number, H: number, border: number, res: number, th:
         }
         ctx.closePath();
         ctx.fillStyle = lg; ctx.fill();
-        ctx.lineWidth = 6; ctx.strokeStyle = '#2a1410'; ctx.stroke();
-        ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,200,90,0.6)'; ctx.stroke();
+        ctx.lineWidth = 6; ctx.strokeStyle = poolKind === 'mud' ? '#1c1a0c' : '#2a1410'; ctx.stroke();
+        ctx.lineWidth = 2; ctx.strokeStyle = poolKind === 'mud' ? 'rgba(160,200,90,0.5)' : 'rgba(255,200,90,0.6)'; ctx.stroke();
+        if (poolKind === 'mud') for (let b = 0; b < 4; b++) circ(ctx, px + (rnd() - 0.5) * p.r, py + (rnd() - 0.5) * p.r * 0.8, 3 + rnd() * 4, 'rgba(160,190,90,0.45)');
     }
     // cliff border: jagged dark rim
     ctx.save();

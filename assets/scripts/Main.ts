@@ -134,7 +134,7 @@ export class Main extends Component implements WorldHost, UIHost {
 
     waveBanner() {
         const r = this.runObj;
-        this.ui.toast(r.wave >= MAX_WAVE && !r.endless ? '最终波！' : `第 ${r.wave} 波`, '#ffffff', 100, 48);
+        this.ui.toast(r.wave >= MAX_WAVE && !r.endless && !r.endlessMode ? '最终波！' : `第 ${r.wave} 波`, '#ffffff', 100, 48);
     }
 
     onWaveEnd() {
@@ -151,6 +151,12 @@ export class Main extends Component implements WorldHost, UIHost {
 
     postWave() {
         const run = this.runObj;
+        if (!run.endless && run.wave >= MAX_WAVE && run.endlessMode) {
+            run.endless = true;
+            this.ui.toast('进入无尽阶段！', COL.gold, 60, 40);
+            this.processQueue();
+            return;
+        }
         if (!run.endless && run.wave >= MAX_WAVE) {
             run.won = true;
             this.record(true);
@@ -198,6 +204,7 @@ export class Main extends Component implements WorldHost, UIHost {
         d.runs++;
         d.kills += run.kills;
         d.bestWave = Math.max(d.bestWave, run.wave);
+        if (run.endlessMode) d.endless[run.stage.id] = Math.max(d.endless[run.stage.id] || 0, run.wave);
         if (win) {
             d.wins[run.char.id] = Math.max(Save.winLevel(run.char.id), run.danger);
             d.stages[run.stage.id] = Math.max(Save.stageLevel(run.stage.id), run.danger);
@@ -208,9 +215,10 @@ export class Main extends Component implements WorldHost, UIHost {
     // ================================================================ UIHost
     run() { return this.runObj; }
 
-    startRun(c: CharDef, weaponId: string, danger: number, stage: StageDef) {
+    startRun(c: CharDef, weaponId: string, danger: number, stage: StageDef, endless = false) {
         Sfx.unlock();
         this.runObj = new Run(c, weaponId, danger, stage);
+        this.runObj.endlessMode = endless;
         this.recorded = false;
         this.world.playerSpr.node.active = true;
         this.world.beginRun(this.runObj);
@@ -268,7 +276,7 @@ export class Main extends Component implements WorldHost, UIHost {
         const r = this.runObj;
         this.quitToMenu();
         this.ui.selChar = r.char;
-        this.startRun(r.char, this.ui.selWeapon || r.char.weapons[0], r.danger, r.stage);
+        this.startRun(r.char, this.ui.selWeapon || r.char.weapons[0], r.danger, r.stage, r.endlessMode);
     }
 
     bossInfo() {

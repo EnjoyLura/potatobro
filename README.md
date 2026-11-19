@@ -64,7 +64,9 @@ This opens http://127.0.0.1:8766/tools/sound-lab.html, a page for reviewing and 
 
 - **Movement**: drag anywhere on screen (floating joystick); WASD or arrow keys on desktop. Esc/P pauses.
 - **Weapons fire automatically**: up to 6 weapons orbit your bot and aim at the nearest enemy.
-- **Stages** (`data/Stages.ts`): 荒原虫巢, 冰封裂谷, 熔火工坊 and 虚空星港. Each has its own arena size and floor theme, its own enemy roster, two elites, a boss and modifiers (enemy HP/damage/speed, starting crystals, player stats). 熔火工坊 has lava pools that hurt the player. A stage unlocks when the previous one is cleared; on each stage, difficulty N+1 unlocks after clearing N.
+- **Stages** (`data/Stages.ts`), in unlock order: 荒原虫巢, 冰封裂谷, 毒沼雨林, 熔火工坊, 沙海遗迹, 机械废墟, 虚空星港, 星渊回廊. Each has its own arena size and floor theme, its own enemy roster, two elites, a boss and modifiers (enemy HP/damage/speed, starting crystals, player stats). 熔火工坊 has lava pools that hurt; 毒沼雨林 has mud that slows. A stage unlocks when the previous one is cleared; on each stage, difficulty N+1 unlocks after clearing N. The stage row on the select screen scrolls sideways.
+- **Endless mode**: the last entry of each stage's difficulty selector (unlocked after clearing that stage once). Waves never end in victory; after wave 20 enemies keep scaling and a boss arrives every 5 waves. The best wave per stage is saved.
+- **Monster mechanics** (`EnemyDef.ai` / `onDeath` / `trail`): healers (heal nearby enemies), burrowers (untargetable underground, surface next to you), sentries (stationary, 3-shot volleys), blinkers (teleport next to you, then dash), orbiters (circle and shoot), hoppers (leap at you), death clouds (frost slows, poison hurts) and burning trails.
 - **20 waves** (20s, rising to 60s; wave 20 is a 90s boss wave). Elites appear on waves 10 and 15 (two waves earlier on 虚空星港), plus more at higher difficulties. After winning you can keep going in endless mode.
 - **Flow**: menu → stage + difficulty → character → starting weapon.
 - **Crystals**: dropped by enemies, used for both money and XP. Crystals left on the ground at wave end go into a bag, and each later pickup draws one extra from it.
@@ -78,12 +80,12 @@ This opens http://127.0.0.1:8766/tools/sound-lab.html, a page for reviewing and 
 | Characters (each with its own stats, traits and starting weapons) | 10 |
 | Weapons (4 tiers each: melee thrust/sweep, guns, beam, chain lightning, explosives, flames, turret builder) | 19 |
 | Items (4 rarities, including turrets, mines, drones, gardens, shields, revive, auto-collect) | 55 |
-| Enemy types (11 base types + 22 stage variants) | 33 |
-| Elites + bosses (2 elites and a multi-phase boss per stage) | 12 |
-| Stages | 4 |
+| Enemy types (regular, incl. recolored stage variants) | 49 |
+| Elites + bosses (2 elites and a multi-phase boss per stage) | 24 |
+| Stages | 8 |
 | Difficulty levels (per stage) | 6 |
 
-Stage enemies are recolored copies of the base drawings (`EnemyDef.art`: target hue, saturation, lightness, plus an ice / lava / void overlay), drawn into the atlas at startup.
+Monster art comes from three sources in `core/Art.ts`: hand-drawn base enemies (`ENEMY_DRAW`), recolored stage variants (`EnemyDef.art`: target hue, saturation, lightness, plus an ice / lava / void overlay), and a parametric creature builder (`CREATURES`: body shape, eyes, mouth, top, sides, tail, pattern, glow) used for every stage elite, boss and the new mechanic monsters. Every item has its own icon. Elite and boss sprites are packed at up to 1.75 texture pixels per unit to keep the atlas small.
 
 ## Codex, saves and cloud save
 
