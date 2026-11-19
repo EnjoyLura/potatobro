@@ -1,4 +1,4 @@
-# 核芯突围 CORE RUSH
+# 核芯突围：万械狂潮 CORE RUSH: Overdrive
 
 A landscape mobile arena wave-survival shooter (in the same genre as Brotato), built with **Cocos Creator 3.8.8** and exported to **web-mobile**. All art is generated in code at runtime. Most sound effects are WebAudio synth sounds generated in code. Four use recorded samples in `build-templates/web-mobile/sfx/`: every gun shares one SMG shot (`shot_smg.mp3`), every melee weapon shares one heavy swing (`swing2.mp3`), kills use `kill.wav` and UI clicks use `click.wav`. The battle BGM is `build-templates/web-mobile/bgm/battle.mp3`. The build copies both folders next to `index.html`.
 

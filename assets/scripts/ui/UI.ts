@@ -209,7 +209,7 @@ export class UI {
         const title = label(s, '核芯突围', Math.round(96 * Math.max(0.75, hk)), '#ffd166', { outline: 9 });
         title.node.setPosition(colX, titleY);
         popIn(title.node);
-        const sub = label(s, 'CORE  RUSH  ·  外星虫潮生存战', Math.round(24 * Math.max(0.85, hk)), COL.text, { outline: 4 });
+        const sub = label(s, '万械狂潮  ·  CORE RUSH: OVERDRIVE', Math.round(24 * Math.max(0.85, hk)), COL.text, { outline: 4 });
         sub.node.setPosition(colX, titleY - Math.round(70 * Math.max(0.75, hk)));
         const bw = Math.min(400, colW - 10), bh = Math.round(Math.max(54, Math.min(76, H * 0.11)));
         const gap = Math.round(bh * 0.24);
