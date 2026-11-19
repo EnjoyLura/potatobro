@@ -444,3 +444,14 @@ export function scrollArea(parent: Node, w: number, h: number, horizontal = fals
         scrollTo(v: number) { y = clampY(v); apply(); },
     };
 }
+
+/** Rewarded-ad button: purple, with a small "广告" tag (see core/Ads.ts). */
+export function adButton(parent: Node, w: number, h: number, text: string, cb: () => void, fontSize = 22): Btn {
+    const b = button(parent, w, h, '▶ ' + text, COL.purple, cb, fontSize);
+    const tagN = mkNode('adtag', b.node);
+    const tg = tagN.addComponent(Graphics);
+    tg.fillColor = C('#ffd23f'); tg.roundRect(-18, -10, 36, 20, 6); tg.fill();
+    label(tagN, '广告', 13, COL.dark, { outline: 0 });
+    tagN.setPosition(w / 2 - 14, h / 2 - 4);
+    return b;
+}

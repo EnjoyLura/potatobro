@@ -6,8 +6,9 @@ import { Sfx } from '../core/Sfx';
 import { Save } from '../core/Save';
 import {
     COL, C, panel, shadowPanel, label, button, Btn, blocker, bar, Bar, icon, iconFit, popIn, clearChildren, size, opacity, tappable, tapSound, drawRR,
-    pill, slider, toggle, cellBg,
+    pill, slider, toggle, cellBg, adButton,
 } from './UIKit';
+import { Ads } from '../core/Ads';
 import { STAGES, StageDef, ENDLESS } from '../data/Stages';
 import { showStageSelect } from './StageUI';
 import { showCodex } from './CodexUI';
@@ -15,6 +16,7 @@ import { showSaves, showCloudConflict } from './SaveUI';
 
 /** Shown on the main menu and settings screen; bump with each release (see changelogPopup). */
 export const VERSION = 'V1.5';
+const START_BONUS = 30;
 import { itemLines, weaponLines, classText, tierColor, statValueText, Line } from './Text';
 import { CHARACTERS, CharDef } from '../data/Characters';
 import { WEAPON_MAP, WEAPON_CLASSES, TIER_NAMES, TIER_BG, TIER_COLORS, WeaponDef } from '../data/Weapons';
@@ -59,6 +61,8 @@ export class UI {
     selWeapon = '';
     selDanger = 0;
     selStage: StageDef = STAGES[0];
+    /** Rewarded-ad start bonus claimed on the weapon screen (applied when the run starts). */
+    startBonus = false;
     /** '难度三' or '无尽模式' for the current stage screen choice. */
     dangerLabel() { return this.selDanger === ENDLESS ? '无尽模式' : DANGERS[this.selDanger].name; }
     /** Which full screen is showing (rebuilt on resize / cloud save changes). */
@@ -526,8 +530,29 @@ export class UI {
         redraw();
         const back = button(s, Math.min(230, this.W * 0.2), 62, '返回', COL.red, () => this.showCharSelect(), 28);
         back.node.setPosition(this.L + 16 + back.w / 2, this.B + 44);
-        const go = button(s, Math.min(250, this.W * 0.21), 62, '出发！', COL.btn, () => this.host.startRun(this.selChar, this.selWeapon, this.selDanger === ENDLESS ? 0 : this.selDanger, this.selStage, this.selDanger === ENDLESS), 30);
+        const go = button(s, Math.min(250, this.W * 0.21), 62, '出发！', COL.btn, () => {
+            this.host.startRun(this.selChar, this.selWeapon, this.selDanger === ENDLESS ? 0 : this.selDanger, this.selStage, this.selDanger === ENDLESS);
+            const run = this.host.run();
+            if (this.startBonus && run) { run.mats += START_BONUS; this.toast(`开局晶体 +${START_BONUS}`, COL.mat, 40, 30); }
+            this.startBonus = false;
+        }, 30);
         go.node.setPosition(this.R - 16 - go.w / 2, this.B + 44);
+        // rewarded ad: extra crystals at the start (once per run)
+        if (Ads.visible('startBonus')) {
+            if (this.startBonus) {
+                const got = label(s, `✓ 已获得开局晶体 +${START_BONUS}`, 20, COL.mat, { outline: 3 });
+                got.node.setPosition(0, this.B + 44);
+            } else {
+                const ab = adButton(s, 280, 56, `开局晶体 +${START_BONUS}`, () => {
+                    Ads.show('startBonus').then(r => {
+                        if (!r.ok) { this.toast(r.msg, COL.gold, 0, 26); return; }
+                        this.startBonus = true;
+                        this.showLoadout();
+                    });
+                }, 22);
+                ab.node.setPosition(0, this.B + 44);
+            }
+        }
     }
 
     // ================================================================ HUD
@@ -826,6 +851,25 @@ export class UI {
         take.node.setPosition(-115, this.B + 55);
         const rec = button(s, 200, 70, `回收 ◆${recycle}`, COL.green, () => { run.mats += recycle; Sfx.sell(); onDone(); }, 26);
         rec.node.setPosition(115, this.B + 55);
+        // rewarded ad: take it and get another item of the same quality (once per wave)
+        if (Ads.visible('crate') && run.adCrateWave !== run.wave) {
+            const ab = adButton(s, 260, 54, '再拿一件同品质', () => {
+                Ads.show('crate').then(r => {
+                    if (!r.ok) { this.toast(r.msg, COL.gold, 0, 26); return; }
+                    run.adCrateWave = run.wave;
+                    run.addItem(it.id);
+                    const extra = run.randomItem(it.tier);
+                    Save.seeItem(extra.id);
+                    run.addItem(extra.id);
+                    Sfx.buy();
+                    this.toast(`获得 ${it.name} 和 ${extra.name}`, COL.gold, 0, 28);
+                    onDone();
+                });
+            }, 22);
+            ab.node.setPosition(210, this.B + 55);
+            take.node.setPosition(-250, this.B + 55);
+            rec.node.setPosition(-30, this.B + 55);
+        }
     }
 
     // ================================================================ shop
@@ -849,12 +893,13 @@ export class UI {
         const wv = label(s, `第 ${run.wave} 波已完成`, 20, COL.dim, { align: 'left' });
         wv.node.setPosition(areaL + 110, this.T - 38);
         const mi = icon(s, 'mat', 28, 30);
-        mi.node.setPosition(areaCX - 20, this.T - 34);
+        mi.node.setPosition(areaL + 300, this.T - 34);
         const matL = label(s, '' + run.mats, 34, '#ffffff', { align: 'left', outline: 4 });
-        matL.node.setPosition(areaCX, this.T - 34);
+        matL.node.setPosition(areaL + 320, this.T - 34);
         const cards = mkNode('cards', s);
         const inv = mkNode('inv', s);
         let rerollBtn: Btn = null;
+        let adBtn: Btn = null;
         const statsHolder = mkNode('statsHolder', s);
         const refreshStats = () => {
             clearChildren(statsHolder);
@@ -885,7 +930,7 @@ export class UI {
             isz = n > 2 * Math.floor(invW / 44) ? 34 : 40;
             perRow = Math.max(1, Math.floor(invW / (isz + 4)));
             const want = Math.max(1, Math.ceil(n / perRow));
-            const room = (r: number) => this.H - 66 - 12 - (weaponBand + 28 + r * (isz + 4)) - 8;
+            const room = (r: number) => this.H - 76 - 12 - (weaponBand + 28 + r * (isz + 4)) - 8;
             rows = want;
             while (rows > 1 && room(rows) < 230) rows--; // keep the cards readable; extra items collapse into "+N"
             ch = Math.max(180, Math.min(400, room(rows)));
@@ -895,7 +940,7 @@ export class UI {
             run.shop.forEach((slot, i) => {
                 if (slot.kind === 'weapon') Save.seeWeapon(slot.id); else Save.seeItem(slot.id);
                 const x = areaL + cw / 2 + i * (cw + 14);
-                const y = this.T - 66 - ch / 2;
+                const y = this.T - 76 - ch / 2;
                 if (slot.sold) {
                     const sn = panel(cards, cw, ch, '#00000000'.slice(0, 7), '#3b3340', 16, 3, 40);
                     sn.setPosition(x, y);
@@ -933,15 +978,28 @@ export class UI {
             // reroll
             if (rerollBtn) rerollBtn.node.destroy();
             const rp = run.rerollPrice();
-            rerollBtn = button(s, 210, 56, rp === 0 ? '免费刷新' : `刷新 ◆${rp}`, run.mats >= rp ? COL.green : COL.btnDark, () => {
+            rerollBtn = button(s, 210, 50, rp === 0 ? '免费刷新' : `刷新 ◆${rp}`, run.mats >= rp ? COL.green : COL.btnDark, () => {
                 if (!run.doReroll()) { Sfx.deny(); return; }
                 Sfx.reroll(); refreshAll();
             }, 24);
             rerollBtn.node.setPosition(areaL + areaW - 105, this.T - 34);
+            // rewarded ad: one free reroll per wave
+            if (adBtn) { adBtn.node.destroy(); adBtn = null; }
+            if (Ads.visible('reroll') && run.adRerollWave !== run.wave) {
+                adBtn = adButton(s, 150, 50, '免费刷新', () => {
+                    Ads.show('reroll').then(r => {
+                        if (!r.ok) { this.toast(r.msg, COL.gold, 0, 26); return; }
+                        run.adRerollWave = run.wave;
+                        run.freeRerolls++;
+                        run.doReroll(); Sfx.reroll(); refreshAll();
+                    });
+                });
+                adBtn.node.setPosition(areaL + areaW - 210 - 12 - 75, this.T - 34);
+            }
         };
         const buildInv = () => {
             clearChildren(inv);
-            const y0 = this.T - 66 - ch - 12; // top of the inventory block
+            const y0 = this.T - 76 - ch - 12; // top of the inventory block
             const wl = label(inv, `武器 (${run.weapons.length}/${MAX_WEAPONS})`, 20, COL.text, { align: 'left' });
             wl.node.setPosition(areaL + 4, y0 - 10);
             run.weapons.forEach((w, i) => {
@@ -1083,6 +1141,31 @@ export class UI {
             }, 380, 220);
         }, 22);
         quit.node.setPosition(cx, this.B + 30);
+    }
+
+    // ================================================================ revive offer (rewarded ad)
+    /** After death: watch an ad to revive with half health, or give up. */
+    showReviveOffer(onRevive: () => void, onGiveUp: () => void) {
+        clearChildren(this.popup);
+        const p = this.popup;
+        blocker(p, 190);
+        const box = mkNode('revive', p);
+        shadowPanel(box, 460, 300, COL.panel2, '#3a3c47');
+        const t = label(box, '核芯损毁', 44, COL.bad, { outline: 5 });
+        t.node.setPosition(0, 100);
+        const d = label(box, '观看一段广告即可原地复活\n恢复 50% 生命并震退周围敌人（每局一次）', 19, COL.text, { outline: 2, width: 430, lineH: 26 });
+        d.node.setPosition(0, 34);
+        const ab = adButton(box, 300, 62, '复活', () => {
+            Ads.show('revive').then(r => {
+                if (!r.ok) { this.toast(r.msg, COL.gold, -170, 26); return; }
+                clearChildren(this.popup);
+                onRevive();
+            });
+        }, 28);
+        ab.node.setPosition(0, -46);
+        const give = button(box, 200, 50, '放弃', COL.btnDark, () => { clearChildren(this.popup); onGiveUp(); }, 22);
+        give.node.setPosition(0, -114);
+        popIn(box);
     }
 
     // ================================================================ results

@@ -3,6 +3,7 @@ import { _decorator, Component, view, ResolutionPolicy, input, Input, EventKeybo
 import { Atlas } from './core/Atlas';
 import { registerArt } from './core/Art';
 import { CloudSave } from './core/CloudSave';
+import { Ads } from './core/Ads';
 import { StageDef } from './data/Stages';
 import { Sfx } from './core/Sfx';
 import { Save } from './core/Save';
@@ -15,7 +16,7 @@ import { MAX_WAVE } from './data/Enemies';
 
 const { ccclass } = _decorator;
 
-type State = 'menu' | 'play' | 'pause' | 'waveEnd' | 'levelup' | 'shop' | 'over';
+type State = 'menu' | 'play' | 'pause' | 'waveEnd' | 'levelup' | 'shop' | 'over' | 'revive';
 
 @ccclass('Main')
 export class Main extends Component implements WorldHost, UIHost {
@@ -189,6 +190,23 @@ export class Main extends Component implements WorldHost, UIHost {
     }
 
     onPlayerDead() {
+        const run = this.runObj;
+        // rewarded ad: one revive per run
+        if (!run.adRevived && Ads.visible('revive')) {
+            this.state = 'revive';
+            this.ui.resetJoystick();
+            this.ui.showReviveOffer(() => {
+                run.adRevived = true;
+                this.world.adRevive();
+                this.state = 'play';
+                this.ui.buildHud();
+            }, () => this.finishDeath());
+            return;
+        }
+        this.finishDeath();
+    }
+
+    finishDeath() {
         this.state = 'over';
         for (const e of this.world.enemies) this.world.puff(e.x, e.y, e.def, e.r);
         this.world.clearAll(false);

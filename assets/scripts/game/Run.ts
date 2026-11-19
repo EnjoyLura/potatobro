@@ -45,6 +45,10 @@ export class Run {
     won = false;
     endless = false;       // past wave 20
     endlessMode = false;   // started from the stage screen's endless mode (no victory at wave 20)
+    // rewarded ads used this run
+    adRevived = false;
+    adRerollWave = -1;
+    adCrateWave = -1;
 
     constructor(char: CharDef, weaponId: string, danger: number, stage: StageDef = STAGES[0]) {
         this.char = char;

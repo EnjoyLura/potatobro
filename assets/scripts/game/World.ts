@@ -541,6 +541,22 @@ export class World {
         }
     }
 
+    /** Rewarded-ad revive: back on your feet with half health, nearby enemies blown away. */
+    adRevive() {
+        const run = this.run;
+        this.dead = false;
+        this.deadT = 0;
+        this.running = true;
+        run.hp = Math.ceil(run.maxHp * 0.5);
+        this.iframe = 2.5;
+        for (const w of this.weapons) w.spr.node.active = true;
+        for (const b of this.bullets) if (b.enemy) b.dist = 1e9;
+        this.explode(this.px, this.py, 260, 40 + run.wave * 6, true);
+        this.glow('shock', this.px, this.py + 12, 0, 0, 0.5, 0.3, 3.2, 255, [255, 240, 160]);
+        this.slowMo(0.6);
+        Sfx.revive();
+    }
+
     killPlayer() {
         this.dead = true;
         this.deadT = 0;

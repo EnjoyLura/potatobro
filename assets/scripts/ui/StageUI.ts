@@ -13,7 +13,8 @@ export function stageUnlocked(i: number) { return i === 0 || Save.stageLevel(STA
 /** Difficulty N+1 unlocks after clearing N; endless mode after clearing the stage on any difficulty. */
 export function dangerUnlocked(st: StageDef, d: number) { return d === ENDLESS ? Save.stageLevel(st.id) >= 0 : d <= Save.stageLevel(st.id) + 1; }
 
-export function showStageSelect(ui: UI) {
+/** keepChoice: rebuilding after an arrow tap, so a locked difficulty stays selected (to browse past it). */
+export function showStageSelect(ui: UI, keepChoice = false) {
     ui.updateSize();
     ui.clearScreen();
     ui.hideHud();
@@ -21,7 +22,7 @@ export function showStageSelect(ui: UI) {
     if (!stageUnlocked(STAGES.indexOf(ui.selStage))) ui.selStage = STAGES[0];
     const st = ui.selStage;
     // highest unlocked difficulty by default, never a locked one
-    if (!dangerUnlocked(st, ui.selDanger)) ui.selDanger = Math.min(DANGERS.length - 1, Save.stageLevel(st.id) + 1);
+    if (!keepChoice && !dangerUnlocked(st, ui.selDanger)) ui.selDanger = Math.min(DANGERS.length - 1, Save.stageLevel(st.id) + 1);
     ui.host.previewStage(st);
     const s = ui.screen;
     const W = ui.W, H = ui.H, L = ui.L, R = ui.R, T = ui.T, B = ui.B;
@@ -101,7 +102,7 @@ export function showStageSelect(ui: UI) {
         tappable(a, () => {
             if (!can) { Sfx.deny(); return; }
             ui.selDanger += dir;
-            showStageSelect(ui);
+            showStageSelect(ui, true);
         });
     };
     arrow(-1); arrow(1);
@@ -121,14 +122,15 @@ export function showStageSelect(ui: UI) {
     go.node.setPosition(R - 16 - go.w / 2, by);
     if (locked) go.setEnabled(false);
     // progress over the start button
-    const prog = panel(s, go.w + 40, 54, '#000000', undefined, 14, 0, 205);
-    prog.setPosition(R - 16 - (go.w + 40) / 2, by + bh / 2 + 40);
+    const pgw = go.w;
+    const prog = panel(s, pgw, 54, '#000000', undefined, 14, 0, 205);
+    prog.setPosition(R - 16 - pgw / 2, by + bh / 2 + 40);
     const cleared = best + 1;
     const pl = label(prog, '难度进度', 18, '#ffffff', { align: 'left', outline: 0 });
-    pl.node.setPosition(-(go.w + 40) / 2 + 16, 8);
+    pl.node.setPosition(-pgw / 2 + 16, 8);
     const pv = label(prog, `${cleared}/${DANGERS.length}`, 18, COL.mat, { align: 'right', outline: 0 });
-    pv.node.setPosition((go.w + 40) / 2 - 16, 8);
-    const pb = bar(prog, go.w + 8, 8, COL.mat, '#30313a', 4);
+    pv.node.setPosition(pgw / 2 - 16, 8);
+    const pb = bar(prog, pgw - 32, 8, COL.mat, '#30313a', 4);
     pb.node.setPosition(0, -12);
     pb.set(cleared, DANGERS.length);
 

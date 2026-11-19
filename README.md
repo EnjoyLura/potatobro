@@ -109,6 +109,19 @@ Monster art comes from three sources in `core/Art.ts`: hand-drawn base enemies (
 - **Time**: hit-stop when the player is hurt, and hit-stop plus slow-mo on elite and boss kills and on death. A red screen flash plays on taking damage.
 - Glows use a shared additive-blend sprite material (`core/Nodes.ts: additiveMaterial`) on their own layer, so they batch together.
 
+## Ads (reserved)
+
+Rewarded video ads use `tap.createRewardedVideoAd` (`core/Ads.ts`). Ad filing is under review, so the four ad buttons are placeholders: they show, and tapping one says ads are coming soon (no reward).
+
+| Slot | Where | Reward |
+|---|---|---|
+| `revive` | popup after dying | revive with 50% HP, nearby enemies blasted (once per run) |
+| `reroll` | shop header, next to 刷新 | one free shop reroll (once per wave) |
+| `crate` | supply crate screen | take the item plus another of the same quality (once per wave) |
+| `startBonus` | starting weapon screen | +30 crystals at the start (once per run) |
+
+To go live: create rewarded video ad units in the TapTap console, paste their ids into `AD_UNITS` in `core/Ads.ts` (one id can serve every slot) and set `Ads.ENABLED = true`. `Ads.SHOW_PLACEHOLDERS = false` hides the buttons while ads are off.
+
 ## Code layout
 
 ```
