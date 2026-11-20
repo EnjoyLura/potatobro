@@ -25,3 +25,7 @@ node_modules/
 #//////////////////////////
 .idea/
 release/
+
+# Generated images and videos (kept locally, not versioned)
+output/
+*.mp4
