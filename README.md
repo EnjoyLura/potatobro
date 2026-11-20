@@ -104,7 +104,7 @@ Monster art comes from three sources in `core/Art.ts`: hand-drawn base enemies (
   - If a sample fails to load, that sound stays silent.
 - **Hits**: enemies flash white, squash, and get an impact star plus directional sparks. Crits add a gold ring, a small shake and a bigger number pop. Damage numbers abbreviate: 1.2K, 1.2W (万).
 - **Taking damage**: 0.75 s of invulnerability after each hit (the player blinks).
-- **Difficulty tuning** (constants at the top of `game/World.ts`): spawn bursts ×1.5, spawn intervals ×0.8, regular enemy HP ×1.45, elite/boss HP ×1.35, plus 3% enemy HP per wave after wave 6; up to 230 enemies at once.
+- **Difficulty tuning** (constants at the top of `game/World.ts`): spawn bursts ×2, spawn intervals ×0.7, regular enemy HP ×1.65, elite/boss HP ×1.5, plus 3.5% enemy HP per wave after wave 6; up to 300 enemies at once.
 - **Kills**: white silhouette pop, glow ring, outlined gibs that arc, bounce and leave droplet stains, plus a ground splat.
 - **Explosions**: flash, fireballs, shock ring, smoke, embers and a scorch mark.
 - **Guns**: directional muzzle flash, tracers, ejected shell casings, and camera recoil kick on heavy weapons. Melee has thrust streaks and a double slash arc.

@@ -15,14 +15,14 @@ export const BORDER = 160;
 // arena half size; set per stage by World.setArena
 let HALF_W = 900, HALF_H = 575;
 const PLAYER_R = 18;
-const MAX_ENEMIES = 230;
-// Global difficulty (V1.7 tuning: more enemies, more health, ramping from mid-run)
-const SPAWN_COUNT = 1.5;    // enemies per spawn burst
-const SPAWN_RATE = 0.8;     // spawn interval multiplier (lower = more often)
-const ENEMY_HP = 1.45;      // regular enemy health
-const ELITE_HP = 1.35;      // elites and bosses
+const MAX_ENEMIES = 300;
+// Global difficulty (V1.8 tuning: many more enemies, more health, ramping from mid-run)
+const SPAWN_COUNT = 2.0;    // enemies per spawn burst
+const SPAWN_RATE = 0.7;     // spawn interval multiplier (lower = more often)
+const ENEMY_HP = 1.65;      // regular enemy health
+const ELITE_HP = 1.5;       // elites and bosses
 const LATE_FROM = 6;        // wave after which health keeps ramping
-const LATE_HP = 0.03;       // extra health per wave after LATE_FROM (+3% each)
+const LATE_HP = 0.035;      // extra health per wave after LATE_FROM (+3.5% each)
 
 export interface WorldHost {
     onWaveEnd(): void;
