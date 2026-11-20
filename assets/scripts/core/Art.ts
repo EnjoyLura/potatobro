@@ -50,22 +50,77 @@ function shadow(ctx: C2D, x: number, y: number, rx: number, ry: number, sil: boo
     if (sil) return;
     ell(ctx, x, y, rx, ry, 'rgba(0,0,0,0.28)');
 }
-function eye(ctx: C2D, x: number, y: number, r: number, px = 0.25, py = 0.1, pupil = 0.5) {
+/** Plain cartoon eye (the core-bot and friendly things). */
+function botEye(ctx: C2D, x: number, y: number, r: number, px = 0.25, py = 0.1, pupil = 0.5) {
     circ(ctx, x, y, r, '#ffffff', OUT, Math.max(1.5, r * 0.28));
     circ(ctx, x + r * px, y + r * py, r * pupil, OUT);
     circ(ctx, x + r * px - r * 0.18, y + r * py - r * 0.2, r * 0.16, '#ffffff');
 }
+/** Center x of the monster being drawn: eyes left of it slant down toward the middle (angry). */
+let EYE_CX = -1;
+/** Monster eye: dark almond socket with a hot glowing yellow iris and an angry slanted lid. */
+function eye(ctx: C2D, x: number, y: number, r: number, px = 0.25, _py = 0.1, _pupil = 0.5) {
+    const side = EYE_CX < 0 || Math.abs(x - EYE_CX) < r * 0.6 ? 0 : (x < EYE_CX ? -1 : 1);
+    const d = side === 1 ? -1 : 1;           // direction from the outer corner to the inner corner
+    const path = (s: number) => {
+        const ox = (u: number) => x + u * r * s, oy = (v: number) => y + 0.12 * r + (v - 0.12) * r * s;
+        ctx.beginPath();
+        if (side === 0) {
+            ctx.moveTo(ox(-1.05), oy(-0.3)); ctx.quadraticCurveTo(ox(0), oy(-0.6), ox(1.05), oy(-0.3));
+            ctx.bezierCurveTo(ox(1.05), oy(1.05), ox(-1.05), oy(1.05), ox(-1.05), oy(-0.3));
+        } else {
+            ctx.moveTo(ox(-1.1 * d), oy(-0.62)); ctx.lineTo(ox(1.05 * d), oy(0.1));
+            ctx.bezierCurveTo(ox(0.9 * d), oy(0.95), ox(-1.15 * d), oy(0.85), ox(-1.1 * d), oy(-0.62));
+        }
+        ctx.closePath();
+    };
+    // soft glow around the eye
+    const g = ctx.createRadialGradient(x, y + r * 0.2, r * 0.2, x, y + r * 0.2, r * 1.9);
+    g.addColorStop(0, 'rgba(255,214,70,0.55)'); g.addColorStop(1, 'rgba(255,170,40,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y + r * 0.2, r * 1.9, 0, TAU); ctx.fill();
+    path(1.12); ctx.fillStyle = OUT; ctx.fill();
+    path(0.78); ctx.fillStyle = '#ffc928'; ctx.fill();
+    path(0.48); ctx.fillStyle = '#fff4b0'; ctx.fill();
+    if (r >= 4.5) ell(ctx, x + px * r * 0.45 + d * r * 0.1, y + r * 0.28, r * 0.13, r * 0.36, OUT);
+}
 function highlight(ctx: C2D, x: number, y: number, rx: number, ry: number, a = 0.35) {
     ell(ctx, x, y, rx, ry, `rgba(255,255,255,${a})`, undefined, 0, -0.5);
+}
+
+// ---------------------------------------------------------------- core / weapon palette (from the key art)
+const CORE = '#3ef0ff';                       // core energy
+const STEEL = '#9199b0', STEEL_D = '#5d6480', STEEL_L = '#c9cfdd', GUNMETAL = '#474d63';
+const GOLD = '#f7a823', GOLD_D = '#c4680f';
+/** Glowing energy dot with a halo. */
+function energy(ctx: C2D, x: number, y: number, r: number, col = CORE, halo = 2.2) {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r * halo);
+    g.addColorStop(0, 'rgba(255,255,255,0.9)'); g.addColorStop(0.3, col); g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.save(); ctx.globalAlpha = 0.55; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r * halo, 0, TAU); ctx.fill(); ctx.restore();
+    circ(ctx, x, y, r, col, OUT, Math.max(1.2, r * 0.35));
+    circ(ctx, x - r * 0.25, y - r * 0.25, r * 0.38, '#ffffff');
+}
+/** Glowing energy cell (a rounded slot of light). */
+function cell(ctx: C2D, x: number, y: number, w: number, h: number, col = CORE) {
+    rrFill(ctx, x, y, w, h, Math.min(w, h) / 2, col, OUT, 1.6);
+    rrFill(ctx, x + 1.2, y + 1.2, Math.max(0.5, w - 2.4), Math.max(0.5, h * 0.35), Math.min(w, h) / 4, 'rgba(255,255,255,0.75)', '');
 }
 
 // ---------------------------------------------------------------- characters
 function drawCharacter(ctx: C2D, c: CharDef, w: number, h: number, sil: boolean) {
     const cx = w / 2, cy = h * 0.56, r = 21;
     shadow(ctx, cx, h - 7, 18, 5, sil);
-    // feet
-    ell(ctx, cx - 9, cy + r - 1, 6, 4, shade(c.color, -0.35), OUT, 2.5);
-    ell(ctx, cx + 9, cy + r - 1, 6, 4, shade(c.color, -0.35), OUT, 2.5);
+    // core-bot chassis (key art): round shell, gunmetal limbs, glowing core in a steel ring
+    const core = c.accent;
+    // mech feet
+    for (const s of [-1, 1]) {
+        rrFill(ctx, cx + s * 9 - 6.5, cy + r - 6, 13, 9, 4, STEEL_D, OUT, 2.5);
+        rrFill(ctx, cx + s * 9 - 4.5, cy + r - 5, 9, 3, 1.5, STEEL_L, '');
+    }
+    // stubby mech arms
+    for (const s of [-1, 1]) {
+        ell(ctx, cx + s * (r + 1), cy + 5, 5.5, 8, STEEL, OUT, 2.5, s * -0.35);
+        circ(ctx, cx + s * (r + 3), cy + 12, 4.2, STEEL_D, OUT, 2.2);
+    }
     // accessory behind
     if (c.accessory === 'fins') {
         poly(ctx, [cx - r + 2, cy, cx - r - 10, cy - 10, cx - r - 6, cy + 8], c.accent);
@@ -81,26 +136,50 @@ function drawCharacter(ctx: C2D, c: CharDef, w: number, h: number, sil: boolean)
     ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, r - 1.5, 0, TAU); ctx.clip();
     ell(ctx, cx + 4, cy + 14, r, 10, shade(c.color, -0.18));
     ctx.restore();
-    highlight(ctx, cx - 8, cy - 9, 7, 4);
-    // chest core light
-    circ(ctx, cx, cy + 9, 4, c.accent, OUT, 2);
-    circ(ctx, cx - 1, cy + 8, 1.4, 'rgba(255,255,255,0.8)');
+    // shell panel seams
+    if (!sil) {
+        ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, r - 1.5, 0, TAU); ctx.clip();
+        ctx.strokeStyle = 'rgba(60,55,80,0.28)'; ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.arc(cx, cy + 9, 12, Math.PI * 1.05, Math.PI * 1.95); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx - r, cy + 4); ctx.lineTo(cx - 13, cy + 6); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx + r, cy + 4); ctx.lineTo(cx + 13, cy + 6); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx, cy - r); ctx.lineTo(cx, cy - 14); ctx.stroke();
+        ctx.restore();
+    }
+    highlight(ctx, cx - 8, cy - 10, 7, 4, 0.5);
     // face
     if (c.accessory === 'visor') {
-        rrFill(ctx, cx - 15, cy - 9, 30, 11, 5, '#1d2b36', OUT, 2.5);
-        rrFill(ctx, cx - 11, cy - 6, 8, 5, 2, c.accent, undefined);
-        rrFill(ctx, cx + 3, cy - 6, 8, 5, 2, c.accent, undefined);
+        rrFill(ctx, cx - 15, cy - 11, 30, 11, 5, '#1d2b36', OUT, 2.5);
+        rrFill(ctx, cx - 11, cy - 8, 8, 5, 2, core, undefined);
+        rrFill(ctx, cx + 3, cy - 8, 8, 5, 2, core, undefined);
     } else {
-        eye(ctx, cx - 7, cy - 4, 5.5, 0.3, 0.1);
-        eye(ctx, cx + 7, cy - 4, 5.5, 0.3, 0.1);
+        // big determined eyes with a slanted lid
+        for (const s of [-1, 1]) {
+            ell(ctx, cx + s * 7.5, cy - 5, 6, 6.6, '#ffffff', OUT, 2.2);
+            circ(ctx, cx + s * 6.2, cy - 3.6, 3.3, OUT);
+            circ(ctx, cx + s * 6.2 - 1.1, cy - 4.9, 1.1, '#ffffff');
+            poly(ctx, [cx + s * 14.5, cy - 13.5, cx + s * 0.8, cy - 13.5, cx + s * 0.8, cy - 6.2, cx + s * 14.5, cy - 10.6], c.color, '');
+            line(ctx, cx + s * 13.8, cy - 10.6, cx + s * 1.6, cy - 6.6, OUT, 2.6);
+        }
     }
-    // mouth
-    ctx.beginPath(); ctx.arc(cx + 1, cy + 3, 3.5, 0.2, Math.PI - 0.2); ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.stroke();
+    // core in a steel ring where a mouth would be
+    if (!sil) {
+        const g = ctx.createRadialGradient(cx, cy + 9, 1, cx, cy + 9, 13);
+        g.addColorStop(0, 'rgba(255,255,255,0.8)'); g.addColorStop(0.35, core); g.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.save(); ctx.globalAlpha = 0.45; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy + 9, 13, 0, TAU); ctx.fill(); ctx.restore();
+    }
+    circ(ctx, cx, cy + 9, 7.6, STEEL, OUT, 2.4);
+    for (let i = 0; i < 6; i++) { const a = i / 6 * TAU + 0.3; line(ctx, cx + Math.cos(a) * 5.2, cy + 9 + Math.sin(a) * 5.2, cx + Math.cos(a) * 7.4, cy + 9 + Math.sin(a) * 7.4, STEEL_D, 1.4); }
+    circ(ctx, cx, cy + 9, 4.6, core, OUT, 1.6);
+    circ(ctx, cx, cy + 9, 2.4, '#e9feff');
+    circ(ctx, cx - 1.6, cy + 7.4, 1, '#ffffff');
     // accessory on top
     switch (c.accessory) {
         case 'antenna':
-            line(ctx, cx, cy - r, cx + 3, cy - r - 9, OUT, 2.5);
-            circ(ctx, cx + 3, cy - r - 11, 4, c.accent, OUT, 2);
+            rrFill(ctx, cx - 3, cy - r - 3, 6, 5, 1.5, STEEL, OUT, 2);
+            line(ctx, cx, cy - r - 3, cx, cy - r - 10, OUT, 2.5);
+            if (sil) circ(ctx, cx, cy - r - 13, 4.5, core, OUT, 2);
+            else energy(ctx, cx, cy - r - 13, 4.5, core);
             break;
         case 'band':
             ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, r - 1, 0, TAU); ctx.clip();
@@ -113,10 +192,10 @@ function drawCharacter(ctx: C2D, c: CharDef, w: number, h: number, sil: boolean)
             circ(ctx, cx + 4, cy - r - 22, 3, '#ffd166', OUT, 1.5);
             break;
         case 'helmet':
-            ctx.beginPath(); ctx.arc(cx, cy - 6, r + 1, Math.PI, 0); ctx.closePath();
+            ctx.beginPath(); ctx.arc(cx, cy - 11, r - 1, Math.PI, 0); ctx.closePath();
             ctx.fillStyle = c.accent; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = OUT; ctx.stroke();
-            rrFill(ctx, cx - r - 4, cy - 9, r * 2 + 8, 5, 2.5, shade(c.accent, -0.15), OUT, 2.5);
-            rrFill(ctx, cx - 3, cy - r - 8, 6, 12, 2, shade(c.accent, 0.2), OUT, 2);
+            rrFill(ctx, cx - r - 3, cy - 14, r * 2 + 6, 5, 2.5, shade(c.accent, -0.15), OUT, 2.5);
+            rrFill(ctx, cx - 3, cy - r - 10, 6, 11, 2, shade(c.accent, 0.2), OUT, 2);
             break;
         case 'clover': {
             line(ctx, cx, cy - r, cx, cy - r - 8, '#2d6a2d', 2.5);
@@ -171,113 +250,132 @@ function teeth(ctx: C2D, x: number, y: number, w: number, h: number) {
         ctx.beginPath(); ctx.moveTo(tx, y - h / 2 + 1); ctx.lineTo(tx + (w - 4) / n, y - h / 2 + 1); ctx.lineTo(tx + (w - 4) / n / 2, y); ctx.closePath(); ctx.fill();
     }
 }
+/** Pair of little demon horns rising from y (key-art monsters all have them). */
+function horns(ctx: C2D, cx: number, y: number, spread: number, len: number, col = '#2e1a4a', lw = 2.5) {
+    for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(cx + s * spread * 0.45, y + len * 0.3);
+        ctx.quadraticCurveTo(cx + s * spread * 0.8, y - len * 0.2, cx + s * spread * 1.25, y - len);
+        ctx.quadraticCurveTo(cx + s * spread * 1.15, y - len * 0.1, cx + s * spread * 1.0, y + len * 0.4);
+        ctx.closePath();
+        ctx.fillStyle = col; ctx.fill(); ctx.lineWidth = lw; ctx.lineJoin = 'round'; ctx.strokeStyle = OUT; ctx.stroke();
+    }
+}
+/** Soft rim light along the upper edge of a dark body (keeps dark monsters readable on the floor). */
+function rim(ctx: C2D, cx: number, cy: number, rx: number, ry: number, col: string) {
+    ctx.save(); ctx.lineCap = 'round'; ctx.strokeStyle = col; ctx.lineWidth = Math.max(1.5, rx * 0.12);
+    ctx.beginPath(); ctx.ellipse(cx, cy, rx * 0.78, ry * 0.78, 0, Math.PI * 1.12, Math.PI * 1.6); ctx.stroke(); ctx.restore();
+}
 
 const ENEMY_DRAW: { [k: string]: { w: number; h: number; d: (ctx: C2D, w: number, h: number, sil: boolean) => void } } = {
+    // shadow-demon swarm (key art): dark violet bodies, little horns, glowing yellow eyes
     e_grub: {
         w: 60, h: 60, d: (ctx, w, h, sil) => {
-            const cx = w / 2, cy = h * 0.55;
+            const cx = w / 2, cy = h * 0.57;
             shadow(ctx, cx, h - 7, 20, 5, sil);
-            line(ctx, cx - 6, cy - 18, cx - 12, cy - 28, OUT, 3); circ(ctx, cx - 12, cy - 29, 3.5, '#b39ddb', OUT, 2);
-            line(ctx, cx + 6, cy - 18, cx + 12, cy - 28, OUT, 3); circ(ctx, cx + 12, cy - 29, 3.5, '#b39ddb', OUT, 2);
-            alienBody(ctx, cx, cy, 21, 19, '#7e57c2');
-            spots(ctx, cx, cy, '#6a43ad', [-12, 8, 3, 13, 6, 2.5, 8, 12, 2]);
-            highlight(ctx, cx - 9, cy - 9, 6, 3.5, 0.3);
-            eye(ctx, cx, cy - 4, 8, 0.25, 0.15, 0.55);
-            teeth(ctx, cx, cy + 9, 14, 6);
+            horns(ctx, cx, cy - 15, 11, 12);
+            alienBody(ctx, cx, cy, 21, 18, '#6b35b0');
+            spots(ctx, cx, cy, '#552591', [-12, 8, 3, 13, 6, 2.5, 8, 12, 2]);
+            rim(ctx, cx, cy, 21, 18, 'rgba(200,160,255,0.45)');
+            eye(ctx, cx - 8, cy - 4, 5.5, 0.2);
+            eye(ctx, cx + 8, cy - 4, 5.5, -0.2);
+            teeth(ctx, cx, cy + 8, 14, 6);
+            for (const s of [-1, 1]) poly(ctx, [cx + s * 10, cy + 15, cx + s * 16, cy + 19, cx + s * 12, cy + 19, cx + s * 14, cy + 21, cx + s * 7, cy + 19], '#3a1d63', OUT, 2);
         }
     },
     e_runner: {
         w: 50, h: 50, d: (ctx, w, h, sil) => {
-            const cx = w / 2, cy = h * 0.55;
+            const cx = w / 2, cy = h * 0.56;
             shadow(ctx, cx, h - 6, 15, 4, sil);
             const pts: number[] = [];
             for (let i = 0; i < 14; i++) {
                 const a = i / 14 * TAU, rr2 = i % 2 === 0 ? 19 : 14;
                 pts.push(cx + Math.cos(a) * rr2, cy + Math.sin(a) * rr2 * 0.9);
             }
-            poly(ctx, pts, '#e05297', OUT, 3);
-            highlight(ctx, cx - 6, cy - 6, 5, 3, 0.3);
-            eye(ctx, cx - 5, cy - 2, 5, 0.3, 0.1);
-            eye(ctx, cx + 5, cy - 2, 5, 0.3, 0.1);
+            poly(ctx, pts, '#9b3fd6', OUT, 3);
+            rim(ctx, cx, cy, 15, 13, 'rgba(240,190,255,0.5)');
+            eye(ctx, cx - 6, cy - 2, 4.8, 0.2);
+            eye(ctx, cx + 6, cy - 2, 4.8, -0.2);
             line(ctx, cx - 4, cy + 7, cx + 4, cy + 7, OUT, 2.5);
         }
     },
     e_spitter: {
         w: 62, h: 62, d: (ctx, w, h, sil) => {
-            const cx = w / 2, cy = h * 0.55;
+            const cx = w / 2, cy = h * 0.57;
             shadow(ctx, cx, h - 7, 20, 5, sil);
-            alienBody(ctx, cx, cy, 20, 20, '#66bb6a');
-            spots(ctx, cx, cy, '#4e9a52', [-11, -8, 3, 12, -4, 2.5, -8, 10, 2.5]);
-            highlight(ctx, cx - 8, cy - 10, 5, 3, 0.3);
-            eye(ctx, cx - 7, cy - 6, 5, 0.3, 0.1);
-            eye(ctx, cx + 7, cy - 6, 5, 0.3, 0.1);
-            // tube mouth
-            rrFill(ctx, cx - 5, cy + 3, 10, 13, 4, '#43a047', OUT, 2.5);
-            ell(ctx, cx, cy + 15, 5, 3, '#1b3d1c', OUT, 2);
+            horns(ctx, cx, cy - 16, 10, 10, '#241540');
+            alienBody(ctx, cx, cy, 20, 19, '#4d3aa6');
+            spots(ctx, cx, cy, '#3b2b88', [-11, -8, 3, 12, -4, 2.5, -8, 10, 2.5]);
+            rim(ctx, cx, cy, 20, 19, 'rgba(180,170,255,0.45)');
+            eye(ctx, cx - 7, cy - 6, 5, 0.2);
+            eye(ctx, cx + 7, cy - 6, 5, -0.2);
+            // acid tube mouth
+            rrFill(ctx, cx - 5, cy + 2, 10, 13, 4, '#3b2b88', OUT, 2.5);
+            ell(ctx, cx, cy + 14, 5, 3, '#9cff5a', OUT, 2);
+            if (!sil) circ(ctx, cx, cy + 14, 2, '#eaffc8');
         }
     },
     e_charger: {
         w: 66, h: 62, d: (ctx, w, h, sil) => {
-            const cx = w / 2, cy = h * 0.56;
+            const cx = w / 2, cy = h * 0.57;
             shadow(ctx, cx, h - 7, 22, 5, sil);
-            poly(ctx, [cx - 14, cy - 12, cx - 26, cy - 26, cx - 20, cy - 8], '#f5e6c8', OUT, 2.5);
-            poly(ctx, [cx + 14, cy - 12, cx + 26, cy - 26, cx + 20, cy - 8], '#f5e6c8', OUT, 2.5);
-            alienBody(ctx, cx, cy, 23, 19, '#ef6c3a');
-            spots(ctx, cx, cy, '#cf5226', [-13, 6, 3, 14, 4, 3]);
-            highlight(ctx, cx - 9, cy - 9, 6, 3, 0.3);
-            // angry eyes
-            eye(ctx, cx - 8, cy - 4, 5, 0.3, 0.2);
-            eye(ctx, cx + 8, cy - 4, 5, -0.3, 0.2);
-            line(ctx, cx - 14, cy - 11, cx - 4, cy - 7, OUT, 3);
-            line(ctx, cx + 14, cy - 11, cx + 4, cy - 7, OUT, 3);
+            poly(ctx, [cx - 14, cy - 12, cx - 27, cy - 27, cx - 20, cy - 8], '#f1dcc0', OUT, 2.5);
+            poly(ctx, [cx + 14, cy - 12, cx + 27, cy - 27, cx + 20, cy - 8], '#f1dcc0', OUT, 2.5);
+            alienBody(ctx, cx, cy, 23, 19, '#7d2f9e');
+            spots(ctx, cx, cy, '#62227f', [-13, 6, 3, 14, 4, 3]);
+            rim(ctx, cx, cy, 23, 19, 'rgba(240,170,255,0.45)');
+            eye(ctx, cx - 9, cy - 4, 5.5, 0.25);
+            eye(ctx, cx + 9, cy - 4, 5.5, -0.25);
             teeth(ctx, cx, cy + 9, 16, 6);
         }
     },
     e_splitter: {
         w: 64, h: 64, d: (ctx, w, h, sil) => {
-            const cx = w / 2, cy = h * 0.53;
+            const cx = w / 2, cy = h * 0.54;
             shadow(ctx, cx, h - 6, 22, 5, sil);
-            circ(ctx, cx, cy, 24, '#42a5f5', OUT, 3.5);
-            // crack line
+            horns(ctx, cx, cy - 19, 12, 9, '#1f2160');
+            circ(ctx, cx, cy, 24, '#4552c9', OUT, 3.5);
+            // glowing energy crack
             ctx.beginPath(); ctx.moveTo(cx, cy - 24); ctx.lineTo(cx - 3, cy - 12); ctx.lineTo(cx + 3, cy - 2); ctx.lineTo(cx - 2, cy + 10); ctx.lineTo(cx + 1, cy + 24);
-            ctx.lineWidth = 2.5; ctx.strokeStyle = '#1e5c94'; ctx.stroke();
-            highlight(ctx, cx - 10, cy - 10, 6, 4, 0.35);
-            eye(ctx, cx - 10, cy - 2, 5.5, 0.2, 0.1);
-            eye(ctx, cx + 10, cy - 2, 5.5, 0.2, 0.1);
-            ctx.beginPath(); ctx.arc(cx, cy + 10, 5, 0.1, Math.PI - 0.1); ctx.lineWidth = 2.5; ctx.strokeStyle = OUT; ctx.stroke();
+            ctx.lineWidth = 4; ctx.strokeStyle = '#1d2470'; ctx.stroke();
+            if (!sil) { ctx.lineWidth = 1.6; ctx.strokeStyle = '#8ff6ff'; ctx.stroke(); }
+            rim(ctx, cx, cy, 24, 24, 'rgba(170,190,255,0.5)');
+            eye(ctx, cx - 10, cy - 2, 5.5, 0.2);
+            eye(ctx, cx + 10, cy - 2, 5.5, -0.2);
+            teeth(ctx, cx, cy + 11, 12, 5);
         }
     },
     e_mini: {
         w: 38, h: 38, d: (ctx, w, h, sil) => {
-            const cx = w / 2, cy = h * 0.53;
+            const cx = w / 2, cy = h * 0.55;
             shadow(ctx, cx, h - 5, 12, 3.5, sil);
-            circ(ctx, cx, cy, 13, '#90caf9', OUT, 3);
-            highlight(ctx, cx - 5, cy - 5, 3.5, 2, 0.4);
-            eye(ctx, cx - 4, cy - 1, 3.5, 0.2, 0.1);
-            eye(ctx, cx + 4, cy - 1, 3.5, 0.2, 0.1);
+            horns(ctx, cx, cy - 10, 7, 6, '#2a2f78', 2);
+            circ(ctx, cx, cy, 13, '#7480ea', OUT, 3);
+            rim(ctx, cx, cy, 13, 13, 'rgba(210,220,255,0.55)');
+            eye(ctx, cx - 4.5, cy - 1, 3.8, 0.2);
+            eye(ctx, cx + 4.5, cy - 1, 3.8, -0.2);
         }
     },
     e_brute: {
         w: 92, h: 88, d: (ctx, w, h, sil) => {
-            const cx = w / 2, cy = h * 0.56;
+            const cx = w / 2, cy = h * 0.58;
             shadow(ctx, cx, h - 8, 34, 7, sil);
             // legs
             for (const s of [-1, 1]) {
-                ell(ctx, cx + s * 24, cy + 26, 9, 6, '#4a3b63', OUT, 3);
+                ell(ctx, cx + s * 24, cy + 26, 9, 6, '#2c1d47', OUT, 3);
             }
-            alienBody(ctx, cx, cy, 36, 31, '#5e4b8b', 4);
+            horns(ctx, cx, cy - 26, 20, 16, '#e9d6bd', 3);
+            alienBody(ctx, cx, cy, 36, 31, '#3f2a6b', 4);
             // shell plates
-            ctx.save(); alienBody(ctx, cx, cy, 36, 31, '#5e4b8b', 4); ctx.clip();
-            ctx.beginPath(); ctx.arc(cx, cy - 40, 52, 0, Math.PI); ctx.fillStyle = '#7a68a8'; ctx.fill();
+            ctx.save(); alienBody(ctx, cx, cy, 36, 31, '#3f2a6b', 4); ctx.clip();
+            ctx.beginPath(); ctx.arc(cx, cy - 40, 52, 0, Math.PI); ctx.fillStyle = '#5b3f94'; ctx.fill();
             ctx.lineWidth = 3; ctx.strokeStyle = OUT; ctx.stroke();
             line(ctx, cx - 18, cy - 30, cx - 22, cy + 6, OUT, 2.5);
             line(ctx, cx + 18, cy - 30, cx + 22, cy + 6, OUT, 2.5);
             ctx.restore();
             alienBody(ctx, cx, cy, 36, 31, 'rgba(0,0,0,0)', 4);
-            eye(ctx, cx - 10, cy + 4, 6, 0.2, 0.1);
-            eye(ctx, cx + 10, cy + 4, 6, 0.2, 0.1);
-            line(ctx, cx - 17, cy - 3, cx - 4, cy + 1, OUT, 3.5);
-            line(ctx, cx + 17, cy - 3, cx + 4, cy + 1, OUT, 3.5);
+            eye(ctx, cx - 11, cy + 4, 6.5, 0.2);
+            eye(ctx, cx + 11, cy + 4, 6.5, -0.2);
             teeth(ctx, cx, cy + 18, 22, 8);
         }
     },
@@ -285,10 +383,11 @@ const ENEMY_DRAW: { [k: string]: { w: number; h: number; d: (ctx: C2D, w: number
         w: 80, h: 80, d: (ctx, w, h, sil) => {
             const cx = w / 2, cy = h * 0.55;
             shadow(ctx, cx, h - 8, 28, 6, sil);
-            alienBody(ctx, cx, cy, 30, 28, '#ad4e7a', 4);
-            spots(ctx, cx, cy, '#f8bbd0', [-14, -10, 6, 12, -14, 5, 15, 6, 6, -6, 14, 5, -18, 8, 4]);
-            spots(ctx, cx, cy, '#d77aa3', [-14, -10, 3, 12, -14, 2.5, 15, 6, 3, -6, 14, 2.5]);
-            highlight(ctx, cx - 12, cy - 14, 6, 3, 0.3);
+            horns(ctx, cx, cy - 22, 16, 12, '#3d1640', 3);
+            alienBody(ctx, cx, cy, 30, 28, '#8c2f86', 4);
+            spots(ctx, cx, cy, '#f39be6', [-14, -10, 6, 12, -14, 5, 15, 6, 6, -6, 14, 5, -18, 8, 4]);
+            spots(ctx, cx, cy, '#ffe0f8', [-14, -10, 3, 12, -14, 2.5, 15, 6, 3, -6, 14, 2.5]);
+            rim(ctx, cx, cy, 30, 28, 'rgba(255,180,240,0.4)');
             eye(ctx, cx - 3, cy - 2, 5, 0.2, 0.2);
             eye(ctx, cx + 7, cy - 4, 4, 0.2, 0.2);
             teeth(ctx, cx + 2, cy + 10, 14, 6);
@@ -300,10 +399,11 @@ const ENEMY_DRAW: { [k: string]: { w: number; h: number; d: (ctx: C2D, w: number
             shadow(ctx, cx, h - 6, 18, 5, sil);
             ctx.beginPath(); ctx.moveTo(cx + 6, cy - 18); ctx.quadraticCurveTo(cx + 14, cy - 28, cx + 8, cy - 32); ctx.lineWidth = 3; ctx.strokeStyle = '#6d4c41'; ctx.stroke();
             if (!sil) { circ(ctx, cx + 8, cy - 33, 4, '#ffd166'); circ(ctx, cx + 8, cy - 33, 2, '#ffffff'); }
-            circ(ctx, cx, cy, 20, '#e53935', OUT, 3.5);
+            horns(ctx, cx - 3, cy - 15, 10, 8, '#4a1010', 2.2);
+            circ(ctx, cx, cy, 20, '#d93a2b', OUT, 3.5);
             highlight(ctx, cx - 7, cy - 8, 5, 3, 0.4);
-            eye(ctx, cx - 7, cy - 1, 5, 0.3, 0.1);
-            eye(ctx, cx + 7, cy - 1, 5, 0.3, 0.1);
+            eye(ctx, cx - 7, cy - 1, 5, 0.2);
+            eye(ctx, cx + 7, cy - 1, 5, -0.2);
             ctx.beginPath(); ctx.arc(cx, cy + 12, 5, Math.PI + 0.3, -0.3); ctx.lineWidth = 2.5; ctx.strokeStyle = OUT; ctx.stroke();
         }
     },
@@ -313,11 +413,13 @@ const ENEMY_DRAW: { [k: string]: { w: number; h: number; d: (ctx: C2D, w: number
             shadow(ctx, cx, h - 7, 20, 5, sil);
             // sack on back
             circ(ctx, cx + 12, cy - 6, 13, '#a1887f', OUT, 3);
-            line(ctx, cx + 8, cy - 17, cx + 16, cy - 17, OUT, 3);
+            poly(ctx, [cx + 9, cy - 16, cx + 12, cy - 27, cx + 15, cy - 16], '#7ff6ff', OUT, 2);
+            poly(ctx, [cx + 14, cy - 15, cx + 19, cy - 23, cx + 19, cy - 13], '#3ee0f5', OUT, 2);
+            line(ctx, cx + 6, cy - 16, cx + 18, cy - 16, OUT, 3);
             alienBody(ctx, cx - 3, cy + 2, 18, 17, '#ffca28');
             highlight(ctx, cx - 10, cy - 6, 5, 3, 0.45);
-            eye(ctx, cx - 9, cy, 4.5, -0.3, 0.1);
-            eye(ctx, cx + 1, cy, 4.5, -0.3, 0.1);
+            botEye(ctx, cx - 9, cy, 4.5, -0.3, 0.1);
+            botEye(ctx, cx + 1, cy, 4.5, -0.3, 0.1);
             ctx.beginPath(); ctx.arc(cx - 4, cy + 9, 3, 0, Math.PI); ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.stroke();
             if (!sil) { ctx.fillStyle = '#fff59d'; ctx.font = 'bold 9px Arial'; ctx.fillText('✦', cx + 8, cy - 2); }
         }
@@ -326,7 +428,7 @@ const ENEMY_DRAW: { [k: string]: { w: number; h: number; d: (ctx: C2D, w: number
         w: 72, h: 88, d: (ctx, w, h, sil) => {
             const cx = w / 2;
             shadow(ctx, cx, h - 7, 24, 6, sil);
-            rrFill(ctx, cx - 7, h - 34, 14, 28, 4, '#6d4c41', OUT, 3);
+            poly(ctx, [cx - 16, h - 8, cx - 10, h - 36, cx + 9, h - 38, cx + 16, h - 8], '#4a4466', OUT, 3);
             poly(ctx, [cx, 6, cx + 26, h - 38, cx - 26, h - 38], '#26c6da', OUT, 3.5);
             poly(ctx, [cx - 13, 22, cx + 2, 6, cx + 4, h - 40, cx - 18, h - 40], '#4dd0e1', undefined);
             poly(ctx, [cx, 6, cx + 26, h - 38, cx - 26, h - 38], undefined, OUT, 3.5);
@@ -341,19 +443,17 @@ const ENEMY_DRAW: { [k: string]: { w: number; h: number; d: (ctx: C2D, w: number
             shadow(ctx, cx, h - 10, 56, 11, sil);
             for (const s of [-1, 1]) {
                 poly(ctx, [cx + s * 30, cy - 34, cx + s * 62, cy - 62, cx + s * 46, cy - 22], '#e0d6c2', OUT, 3.5);
-                ell(ctx, cx + s * 38, cy + 44, 14, 9, '#5a1f1f', OUT, 3.5);
+                ell(ctx, cx + s * 38, cy + 44, 14, 9, '#3a1030', OUT, 3.5);
             }
-            alienBody(ctx, cx, cy, 60, 52, '#a33b3b', 5);
-            ctx.save(); alienBody(ctx, cx, cy, 60, 52, '#a33b3b', 5); ctx.clip();
-            ctx.beginPath(); ctx.arc(cx, cy - 70, 88, 0, Math.PI); ctx.fillStyle = '#7d2b2b'; ctx.fill();
+            alienBody(ctx, cx, cy, 60, 52, '#7a2a5a', 5);
+            ctx.save(); alienBody(ctx, cx, cy, 60, 52, '#7a2a5a', 5); ctx.clip();
+            ctx.beginPath(); ctx.arc(cx, cy - 70, 88, 0, Math.PI); ctx.fillStyle = '#56203f'; ctx.fill();
             ctx.lineWidth = 4; ctx.strokeStyle = OUT; ctx.stroke();
             for (const s of [-1, 0, 1]) line(ctx, cx + s * 28, cy - 50, cx + s * 34, cy + 16, OUT, 3);
             ctx.restore();
             alienBody(ctx, cx, cy, 60, 52, 'rgba(0,0,0,0)', 5);
-            eye(ctx, cx - 18, cy + 8, 10, 0.2, 0.15);
-            eye(ctx, cx + 18, cy + 8, 10, 0.2, 0.15);
-            line(ctx, cx - 32, cy - 6, cx - 8, cy + 2, OUT, 5);
-            line(ctx, cx + 32, cy - 6, cx + 8, cy + 2, OUT, 5);
+            eye(ctx, cx - 19, cy + 8, 11, 0.2);
+            eye(ctx, cx + 19, cy + 8, 11, -0.2);
             teeth(ctx, cx, cy + 32, 40, 12);
         }
     },
@@ -411,162 +511,197 @@ const ENEMY_DRAW: { [k: string]: { w: number; h: number; d: (ctx: C2D, w: number
 };
 
 // ---------------------------------------------------------------- weapons (pointing right; grip on the left)
+// Key-art palette: steel and gunmetal bodies, gold trim, glowing cyan core cells.
 const WEAPON_DRAW: { [k: string]: { w: number; h: number; d: (ctx: C2D, w: number, h: number) => void } } = {
     w_fist: {
         w: 44, h: 34, d: (ctx, w, h) => {
-            rrFill(ctx, 3, h / 2 - 6, 14, 12, 3, '#455a64');
-            rrFill(ctx, 13, 4, 26, 26, 9, '#ff7043');
-            for (let i = 0; i < 3; i++) line(ctx, 34, 10 + i * 7, 39, 10 + i * 7, OUT, 2);
-            highlight(ctx, 22, 10, 6, 3, 0.4);
+            rrFill(ctx, 3, h / 2 - 6, 14, 12, 3, GUNMETAL);
+            rrFill(ctx, 13, 4, 26, 26, 9, STEEL);
+            rrFill(ctx, 29, 5, 10, 24, 4, GOLD);
+            for (let i = 0; i < 3; i++) line(ctx, 31, 11 + i * 6, 37, 11 + i * 6, GOLD_D, 2);
+            cell(ctx, 17, 13, 9, 8);
+            highlight(ctx, 20, 8, 5, 2.2, 0.5);
         }
     },
     w_blade: {
         w: 76, h: 26, d: (ctx, w, h) => {
-            rrFill(ctx, 2, h / 2 - 4, 16, 8, 3, '#5d4037');
-            rrFill(ctx, 16, h / 2 - 10, 6, 20, 2, '#ffd166');
-            poly(ctx, [22, h / 2 - 6, 64, h / 2 - 5, 74, h / 2, 64, h / 2 + 5, 22, h / 2 + 6], '#80deea');
-            line(ctx, 26, h / 2, 64, h / 2, 'rgba(255,255,255,0.8)', 2);
+            rrFill(ctx, 3, h / 2 - 4, 14, 8, 3, GUNMETAL);
+            circ(ctx, 4, h / 2, 3.4, GOLD, OUT, 2);
+            poly(ctx, [22, h / 2 - 6, 62, h / 2 - 6, 74, h / 2, 62, h / 2 + 6, 22, h / 2 + 6], '#b3cbea');
+            poly(ctx, [23, h / 2 + 1, 62, h / 2 + 1, 71, h / 2, 62, h / 2 + 5, 23, h / 2 + 5], '#7f9cc4', '');
+            line(ctx, 26, h / 2 - 1.5, 63, h / 2 - 1.5, CORE, 2);
+            rrFill(ctx, 15, h / 2 - 11, 8, 22, 3, GOLD);
+            circ(ctx, 19, h / 2, 2.8, CORE, OUT, 1.5);
         }
     },
     w_spear: {
         w: 96, h: 22, d: (ctx, w, h) => {
-            rrFill(ctx, 2, h / 2 - 3, 70, 6, 3, '#8d6e63');
-            poly(ctx, [68, h / 2 - 8, 94, h / 2, 68, h / 2 + 8, 72, h / 2], '#b388ff');
-            line(ctx, 72, h / 2, 88, h / 2, 'rgba(255,255,255,0.7)', 1.5);
+            rrFill(ctx, 2, h / 2 - 3, 70, 6, 3, GUNMETAL);
+            for (const x of [12, 40, 63]) rrFill(ctx, x, h / 2 - 4.5, 5, 9, 1.5, GOLD, OUT, 1.6);
+            poly(ctx, [68, h / 2 - 8, 94, h / 2, 68, h / 2 + 8, 72, h / 2], '#8ff6ff');
+            line(ctx, 73, h / 2, 88, h / 2, '#ffffff', 1.6);
         }
     },
     w_hammer: {
         w: 70, h: 44, d: (ctx, w, h) => {
-            rrFill(ctx, 2, h / 2 - 4, 46, 8, 3, '#6d4c41');
-            rrFill(ctx, 42, 3, 24, 38, 6, '#90a4ae');
-            rrFill(ctx, 46, 8, 16, 28, 4, '#cfd8dc', undefined);
-            line(ctx, 44, h / 2, 64, h / 2, '#ffd166', 3);
+            rrFill(ctx, 2, h / 2 - 4, 42, 8, 3, GUNMETAL);
+            rrFill(ctx, 8, h / 2 - 5, 6, 10, 2, GOLD, OUT, 1.6);
+            rrFill(ctx, 40, 3, 26, 38, 6, STEEL);
+            rrFill(ctx, 40, 8, 26, 6, 2, GOLD, OUT, 2);
+            rrFill(ctx, 40, 30, 26, 6, 2, GOLD, OUT, 2);
+            cell(ctx, 48, 17, 10, 10);
+            highlight(ctx, 47, 5.5, 5, 1.4, 0.5);
         }
     },
     w_chainsaw: {
         w: 70, h: 30, d: (ctx, w, h) => {
-            rrFill(ctx, 2, 6, 24, 18, 5, '#ffa000');
-            rrFill(ctx, 22, h / 2 - 6, 44, 12, 6, '#b0bec5');
-            ctx.fillStyle = OUT;
+            rrFill(ctx, 22, h / 2 - 6, 44, 12, 6, STEEL_L);
             for (let i = 0; i < 7; i++) poly(ctx, [26 + i * 6, h / 2 - 6, 29 + i * 6, h / 2 - 9, 32 + i * 6, h / 2 - 6], OUT, undefined);
             for (let i = 0; i < 7; i++) poly(ctx, [26 + i * 6, h / 2 + 6, 29 + i * 6, h / 2 + 9, 32 + i * 6, h / 2 + 6], OUT, undefined);
+            line(ctx, 26, h / 2, 60, h / 2, 'rgba(62,240,255,0.8)', 2);
+            rrFill(ctx, 2, 6, 24, 18, 5, GOLD);
+            rrFill(ctx, 6, 10, 12, 10, 3, GUNMETAL);
+            cell(ctx, 8, 12, 8, 4);
         }
     },
     w_flamesword: {
         w: 76, h: 28, d: (ctx, w, h) => {
-            rrFill(ctx, 2, h / 2 - 4, 16, 8, 3, '#3e2723');
-            rrFill(ctx, 16, h / 2 - 10, 6, 20, 2, '#ff7043');
+            rrFill(ctx, 3, h / 2 - 4, 14, 8, 3, GUNMETAL);
+            circ(ctx, 4, h / 2, 3.4, GOLD, OUT, 2);
             poly(ctx, [22, h / 2 - 7, 60, h / 2 - 9, 74, h / 2, 60, h / 2 + 7, 22, h / 2 + 6], '#ff5722');
             poly(ctx, [26, h / 2 - 3, 58, h / 2 - 4, 68, h / 2, 58, h / 2 + 3, 26, h / 2 + 3], '#ffd54f', undefined);
+            rrFill(ctx, 15, h / 2 - 11, 8, 22, 3, GOLD);
+            circ(ctx, 19, h / 2, 2.8, '#ff7a1a', OUT, 1.5);
         }
     },
     w_pistol: {
         w: 46, h: 30, d: (ctx, w, h) => {
-            rrFill(ctx, 6, 14, 10, 14, 3, '#5d4037');
-            rrFill(ctx, 4, 6, 38, 11, 3, '#78909c');
-            rrFill(ctx, 34, 8, 8, 7, 2, '#4fc3f7', undefined);
-            line(ctx, 10, 9, 30, 9, 'rgba(255,255,255,0.5)', 1.5);
+            rrFill(ctx, 6, 14, 10, 14, 3, GUNMETAL);
+            rrFill(ctx, 4, 6, 38, 11, 3, STEEL);
+            rrFill(ctx, 5, 13, 28, 3.5, 1.5, GOLD, '');
+            cell(ctx, 33, 7.5, 9, 7);
+            line(ctx, 9, 9, 28, 9, 'rgba(255,255,255,0.6)', 1.5);
         }
     },
     w_smg: {
         w: 56, h: 30, d: (ctx, w, h) => {
-            rrFill(ctx, 2, 8, 12, 9, 2, '#455a64');
-            rrFill(ctx, 12, 6, 32, 12, 3, '#607d8b');
-            rrFill(ctx, 42, 9, 12, 6, 2, '#37474f');
-            rrFill(ctx, 22, 16, 7, 12, 2, '#37474f');
-            rrFill(ctx, 14, 16, 6, 9, 2, '#5d4037');
+            rrFill(ctx, 2, 8, 12, 9, 2, GUNMETAL);
+            rrFill(ctx, 42, 9, 12, 6, 2, GUNMETAL);
+            rrFill(ctx, 22, 16, 7, 12, 2, GOLD);
+            rrFill(ctx, 14, 16, 6, 9, 2, GUNMETAL);
+            rrFill(ctx, 12, 6, 32, 12, 3, STEEL);
+            cell(ctx, 30, 8.5, 10, 4.5);
+            line(ctx, 15, 9, 27, 9, 'rgba(255,255,255,0.55)', 1.4);
         }
     },
     w_shotgun: {
         w: 66, h: 26, d: (ctx, w, h) => {
-            rrFill(ctx, 2, 9, 20, 11, 4, '#8d6e63');
-            rrFill(ctx, 18, 7, 44, 7, 2, '#546e7a');
-            rrFill(ctx, 18, 13, 44, 6, 2, '#455a64');
-            rrFill(ctx, 30, 15, 14, 7, 2, '#6d4c41');
+            rrFill(ctx, 2, 9, 20, 11, 4, '#d98a2b');
+            rrFill(ctx, 18, 6, 44, 7, 2, STEEL_L);
+            rrFill(ctx, 18, 12.5, 44, 7, 2, STEEL);
+            rrFill(ctx, 30, 15, 15, 7, 2, GUNMETAL);
+            rrFill(ctx, 56, 5, 7, 15, 2, GOLD, OUT, 2);
+            cell(ctx, 8, 12, 9, 4);
         }
     },
     w_sniper: {
         w: 88, h: 28, d: (ctx, w, h) => {
-            rrFill(ctx, 2, 12, 22, 11, 4, '#4e342e');
-            rrFill(ctx, 20, 12, 64, 6, 2, '#37474f');
-            rrFill(ctx, 30, 3, 24, 8, 4, '#263238');
-            circ(ctx, 54, 7, 3, '#80deea', OUT, 1.5);
-            rrFill(ctx, 80, 10, 6, 10, 2, '#263238');
+            rrFill(ctx, 2, 12, 22, 11, 4, GUNMETAL);
+            rrFill(ctx, 4, 14, 8, 6, 2, GOLD, '');
+            rrFill(ctx, 20, 12, 64, 6, 2, STEEL);
+            rrFill(ctx, 30, 3, 24, 8, 4, GUNMETAL);
+            circ(ctx, 54, 7, 3.2, CORE, OUT, 1.5);
+            rrFill(ctx, 80, 10, 6, 10, 2, GUNMETAL);
+            rrFill(ctx, 56, 11.5, 6, 7, 1.5, GOLD, OUT, 1.5);
         }
     },
     w_rocket: {
         w: 76, h: 32, d: (ctx, w, h) => {
-            rrFill(ctx, 4, 7, 66, 16, 6, '#558b2f');
-            rrFill(ctx, 64, 5, 10, 20, 3, '#33691e');
-            rrFill(ctx, 22, 21, 8, 10, 2, '#3e2723');
-            rrFill(ctx, 10, 9, 14, 4, 2, '#ffd166', undefined);
+            rrFill(ctx, 22, 21, 8, 10, 2, STEEL_D);
+            rrFill(ctx, 4, 7, 66, 16, 6, GUNMETAL);
+            rrFill(ctx, 12, 7, 6, 16, 2, GOLD, OUT, 2);
+            rrFill(ctx, 48, 7, 6, 16, 2, GOLD, OUT, 2);
+            rrFill(ctx, 64, 4, 10, 22, 3, STEEL);
+            rrFill(ctx, 1, 5, 8, 20, 3, STEEL_D);
+            cell(ctx, 23, 10, 20, 5);
         }
     },
     w_wand: {
         w: 66, h: 28, d: (ctx, w, h) => {
-            rrFill(ctx, 2, h / 2 - 3, 48, 6, 3, '#5d4037');
-            poly(ctx, [48, h / 2, 58, 3, 64, h / 2, 58, h - 3], '#40c4ff');
-            line(ctx, 52, h / 2, 60, h / 2, '#ffffff', 2);
+            rrFill(ctx, 2, h / 2 - 3, 46, 6, 3, GOLD);
+            for (const x of [10, 30]) rrFill(ctx, x, h / 2 - 4, 4, 8, 1.5, GOLD_D, OUT, 1.5);
+            poly(ctx, [44, h / 2 - 2, 53, 3, 52, h / 2 - 3], GOLD, OUT, 2);
+            poly(ctx, [44, h / 2 + 2, 53, h - 3, 52, h / 2 + 3], GOLD, OUT, 2);
+            energy(ctx, 56, h / 2, 7, CORE, 1.8);
+            poly(ctx, [57, h / 2 - 5, 53, h / 2 + 1, 56, h / 2 + 1, 55, h / 2 + 5, 59, h / 2 - 1, 56, h / 2 - 1], '#ffe14d', OUT, 1);
         }
     },
     w_flamethrower: {
         w: 66, h: 32, d: (ctx, w, h) => {
-            circ(ctx, 12, 16, 10, '#d84315');
-            rrFill(ctx, 18, 10, 36, 10, 3, '#78909c');
-            rrFill(ctx, 50, 8, 12, 14, 3, '#455a64');
-            if (true) circ(ctx, 62, 15, 3, '#ffab40');
+            rrFill(ctx, 18, 10, 36, 10, 3, STEEL);
+            circ(ctx, 12, 16, 10, GOLD);
+            line(ctx, 6, 16, 18, 16, GOLD_D, 2);
+            rrFill(ctx, 50, 8, 12, 14, 3, GUNMETAL);
+            cell(ctx, 24, 12, 16, 4, '#ffab40');
+            circ(ctx, 62, 15, 3, '#ffab40');
         }
     },
     w_laser: {
         w: 70, h: 30, d: (ctx, w, h) => {
-            rrFill(ctx, 4, 8, 40, 14, 6, '#eceff1');
-            rrFill(ctx, 40, 10, 26, 10, 4, '#b0bec5');
-            rrFill(ctx, 10, 18, 9, 11, 3, '#37474f');
-            line(ctx, 12, 12, 56, 12, '#e040fb', 3);
+            rrFill(ctx, 10, 18, 9, 11, 3, GUNMETAL);
+            rrFill(ctx, 4, 8, 40, 14, 6, STEEL_L);
+            rrFill(ctx, 40, 10, 26, 10, 4, STEEL);
+            rrFill(ctx, 4, 17, 36, 4, 2, GOLD, '');
+            line(ctx, 12, 12.5, 58, 12.5, '#e040fb', 3);
             circ(ctx, 64, 15, 3, '#ea80fc');
         }
     },
     w_medigun: {
         w: 54, h: 30, d: (ctx, w, h) => {
+            rrFill(ctx, 10, 17, 9, 11, 3, GUNMETAL);
             rrFill(ctx, 4, 6, 40, 13, 5, '#ffffff');
-            rrFill(ctx, 40, 9, 12, 7, 2, '#b0bec5');
-            rrFill(ctx, 10, 17, 9, 11, 3, '#455a64');
+            rrFill(ctx, 40, 9, 12, 7, 2, STEEL);
             ctx.fillStyle = '#43a047'; ctx.fillRect(20, 9, 8, 3); ctx.fillRect(22.5, 6.5, 3, 8);
+            cell(ctx, 32, 9, 8, 6, '#7dff8a');
         }
     },
     w_wrench: {
         w: 60, h: 30, d: (ctx, w, h) => {
-            rrFill(ctx, 2, h / 2 - 4, 42, 8, 3, '#90a4ae');
-            circ(ctx, 48, h / 2, 10, '#90a4ae');
-            ctx.fillStyle = 'rgba(0,0,0,0)';
+            rrFill(ctx, 2, h / 2 - 4, 42, 8, 3, STEEL);
+            circ(ctx, 48, h / 2, 10, STEEL);
             ctx.save(); ctx.globalCompositeOperation = 'destination-out';
             ctx.fillRect(50, h / 2 - 4, 12, 8); ctx.restore();
             line(ctx, 50, h / 2 - 4, 58, h / 2 - 4, OUT, 2.5);
             line(ctx, 50, h / 2 + 4, 58, h / 2 + 4, OUT, 2.5);
-            rrFill(ctx, 4, h / 2 - 4, 14, 8, 3, '#ff7043');
+            rrFill(ctx, 4, h / 2 - 4, 14, 8, 3, GOLD);
+            cell(ctx, 24, h / 2 - 2, 10, 4);
         }
     },
     w_slingshot: {
         w: 46, h: 40, d: (ctx, w, h) => {
-            line(ctx, 4, h / 2, 22, h / 2, OUT, 9); line(ctx, 4, h / 2, 22, h / 2, '#8d6e63', 5);
-            line(ctx, 22, h / 2, 40, 6, OUT, 8); line(ctx, 22, h / 2, 40, 6, '#8d6e63', 4.5);
-            line(ctx, 22, h / 2, 40, h - 6, OUT, 8); line(ctx, 22, h / 2, 40, h - 6, '#8d6e63', 4.5);
-            line(ctx, 40, 6, 34, h / 2, '#ef9a9a', 2); line(ctx, 40, h - 6, 34, h / 2, '#ef9a9a', 2);
+            line(ctx, 4, h / 2, 22, h / 2, OUT, 9); line(ctx, 4, h / 2, 22, h / 2, GUNMETAL, 5);
+            line(ctx, 22, h / 2, 40, 6, OUT, 8); line(ctx, 22, h / 2, 40, 6, STEEL, 4.5);
+            line(ctx, 22, h / 2, 40, h - 6, OUT, 8); line(ctx, 22, h / 2, 40, h - 6, STEEL, 4.5);
+            circ(ctx, 22, h / 2, 4, GOLD, OUT, 2);
+            line(ctx, 40, 6, 34, h / 2, CORE, 2); line(ctx, 40, h - 6, 34, h / 2, CORE, 2);
         }
     },
     w_minigun: {
         w: 76, h: 34, d: (ctx, w, h) => {
-            rrFill(ctx, 2, 8, 26, 18, 6, '#546e7a');
-            for (let i = 0; i < 3; i++) rrFill(ctx, 26, 8 + i * 6, 46, 6, 3, i === 1 ? '#78909c' : '#607d8b');
-            rrFill(ctx, 66, 6, 8, 22, 3, '#37474f');
+            for (let i = 0; i < 3; i++) rrFill(ctx, 26, 8 + i * 6, 46, 6, 3, i === 1 ? STEEL_L : STEEL);
+            rrFill(ctx, 48, 6, 6, 22, 2, GOLD, OUT, 2);
+            rrFill(ctx, 66, 6, 8, 22, 3, GUNMETAL);
+            rrFill(ctx, 2, 8, 26, 18, 6, GUNMETAL);
+            cell(ctx, 8, 13, 13, 6);
         }
     },
     w_grenade: {
         w: 64, h: 34, d: (ctx, w, h) => {
-            rrFill(ctx, 2, 10, 18, 12, 4, '#5d4037');
-            circ(ctx, 30, 17, 12, '#827717');
-            rrFill(ctx, 36, 10, 26, 13, 5, '#9e9d24');
-            for (let i = 0; i < 3; i++) line(ctx, 22 + i * 7, 8, 22 + i * 7, 26, OUT, 1.5);
+            rrFill(ctx, 2, 10, 18, 12, 4, GUNMETAL);
+            rrFill(ctx, 36, 10, 26, 13, 5, STEEL);
+            circ(ctx, 30, 17, 12, GOLD);
+            for (let i = 0; i < 3; i++) line(ctx, 23 + i * 7, 8, 23 + i * 7, 26, GOLD_D, 1.6);
+            circ(ctx, 30, 17, 4, CORE, OUT, 1.5);
         }
     },
 };
@@ -1010,6 +1145,8 @@ function drawVariant(ctx: C2D, d: (ctx: C2D, w: number, h: number, sil: boolean)
         const ss = hsl[1], ll = hsl[2];
         // keep outlines, eyes, teeth and highlights; recolor the body
         if (ss < 0.22 || ll < 0.13 || ll > 0.93) continue;
+        // the glowing yellow eyes stay yellow in every stage
+        if (hsl[0] > 38 && hsl[0] < 62 && ss > 0.6 && ll > 0.5) continue;
         const o = hsl2rgb(art.hue, Math.min(1, ss * satMul), Math.max(0.05, Math.min(0.92, ll + lAdd)));
         px[i] = o[0]; px[i + 1] = o[1]; px[i + 2] = o[2];
     }
@@ -1064,25 +1201,27 @@ export function registerArt() {
     for (const c of CHARACTERS) {
         Atlas.add('c_' + c.id, 72, 78, (ctx, w, h, sil) => drawCharacter(ctx, c, w, h, sil), true);
     }
-    // enemies
+    // enemies (EYE_CX lets the glowing eyes slant toward the middle of each monster)
+    const withEyes = (d: (ctx: C2D, w: number, h: number, sil: boolean) => void) =>
+        (ctx: C2D, w: number, h: number, sil: boolean) => { EYE_CX = w / 2; try { d(ctx, w, h, sil); } finally { EYE_CX = -1; } };
     for (const k in ENEMY_DRAW) {
         const e = ENEMY_DRAW[k];
-        Atlas.add(k, e.w, e.h, e.d, true);
+        Atlas.add(k, e.w, e.h, withEyes(e.d), true);
     }
     // stage variants: recolored copies of the drawings above plus an ice / lava / void overlay
     for (const id in ENEMIES) {
         const def = ENEMIES[id];
         if (ENEMY_DRAW[def.sprite]) continue;
         const cr = CREATURES[def.sprite];
-        if (cr) { Atlas.add(def.sprite, cr.w, cr.h, (ctx, w, h, sil) => drawCreature(ctx, cr, w, h, sil), true); continue; }
+        if (cr) { Atlas.add(def.sprite, cr.w, cr.h, withEyes((ctx, w, h, sil) => drawCreature(ctx, cr, w, h, sil)), true); continue; }
         if (!def.art) continue;
         const base = ENEMY_DRAW[def.art.base];
         if (!base) { console.warn('[Art] missing base drawing', def.art.base); continue; }
         const art = def.art;
-        Atlas.add(def.sprite, base.w, base.h, (ctx, w, h, sil) => {
+        Atlas.add(def.sprite, base.w, base.h, withEyes((ctx, w, h, sil) => {
             if (sil) { base.d(ctx, w, h, true); return; }
             drawVariant(ctx, base.d, w, h, art);
-        }, true);
+        }), true);
     }
     // weapons
     for (const k in WEAPON_DRAW) {
@@ -1217,9 +1356,29 @@ export function registerArt() {
     Atlas.add('px', 8, 8, (ctx) => { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 8, 8); });
     Atlas.add('circle', 64, 64, (ctx) => circ(ctx, 32, 32, 31, '#ffffff'));
     // pickups
+    // core crystal shard (the materials you collect)
     Atlas.add('mat', 22, 24, (ctx, w, h) => {
-        poly(ctx, [11, 2, 19, 9, 15, 22, 7, 22, 3, 9], '#69f0ae', OUT, 2.5);
-        poly(ctx, [11, 4, 15, 9, 11, 20, 8, 10], '#b9f6ca', undefined);
+        const g = ctx.createRadialGradient(11, 13, 1, 11, 13, 11);
+        g.addColorStop(0, 'rgba(62,240,255,0.55)'); g.addColorStop(1, 'rgba(62,240,255,0)');
+        ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+        poly(ctx, [11, 2, 18, 9, 15, 22, 7, 22, 4, 9], '#3ee6f8', OUT, 2.5);
+        poly(ctx, [11, 4, 15, 9, 11, 20, 8, 10], '#d4fdff', undefined);
+    });
+    // glowing ring the weapons orbit on (drawn additively, squashed into an ellipse at runtime)
+    Atlas.add('orbit', 160, 160, (ctx) => {
+        const c = 80;
+        const g = ctx.createRadialGradient(c, c, 56, c, c, 80);
+        g.addColorStop(0, 'rgba(62,240,255,0)'); g.addColorStop(0.5, 'rgba(62,240,255,0.32)');
+        g.addColorStop(0.7, 'rgba(170,250,255,0.85)'); g.addColorStop(0.86, 'rgba(62,240,255,0.28)'); g.addColorStop(1, 'rgba(62,240,255,0)');
+        ctx.fillStyle = g; ctx.fillRect(0, 0, 160, 160);
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = 'rgba(230,255,255,0.95)'; ctx.lineWidth = 3.5;
+        for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(c, c, 72, i * TAU / 3, i * TAU / 3 + 1.2); ctx.stroke(); }
+        ctx.strokeStyle = 'rgba(62,240,255,0.7)'; ctx.lineWidth = 2;
+        for (let i = 0; i < 24; i++) {
+            const a = i / 24 * TAU;
+            ctx.beginPath(); ctx.moveTo(c + Math.cos(a) * 62, c + Math.sin(a) * 62); ctx.lineTo(c + Math.cos(a) * 66, c + Math.sin(a) * 66); ctx.stroke();
+        }
     });
     Atlas.add('fruit', 30, 30, (ctx, w, h, sil) => {
         shadow(ctx, 15, 26, 9, 3, sil);
@@ -1229,9 +1388,10 @@ export function registerArt() {
     });
     Atlas.add('crate', 38, 36, (ctx, w, h, sil) => {
         shadow(ctx, 19, 32, 15, 4, sil);
-        rrFill(ctx, 4, 6, 30, 24, 3, '#c8935a', OUT, 3);
-        line(ctx, 4, 14, 34, 14, OUT, 2.5); line(ctx, 19, 6, 19, 30, OUT, 2.5);
-        rrFill(ctx, 15, 12, 8, 6, 1.5, '#ffd166', OUT, 1.5);
+        rrFill(ctx, 4, 6, 30, 24, 4, STEEL, OUT, 3);
+        rrFill(ctx, 4, 12, 30, 5, 1.5, GOLD, OUT, 2);
+        rrFill(ctx, 7, 20, 24, 7, 2, STEEL_D, '');
+        cell(ctx, 14, 11, 10, 7);
     });
     Atlas.add('crate_l', 42, 40, (ctx, w, h, sil) => {
         shadow(ctx, 21, 36, 17, 4, sil);
@@ -1242,11 +1402,12 @@ export function registerArt() {
     // structures
     Atlas.add('turret', 50, 52, (ctx, w, h, sil) => {
         shadow(ctx, 25, 46, 18, 5, sil);
-        rrFill(ctx, 9, 30, 32, 16, 5, '#78909c', OUT, 3);
-        circ(ctx, 25, 26, 12, '#a0e86f', OUT, 3);
-        circ(ctx, 25, 26, 4, '#2e7d32');
+        rrFill(ctx, 9, 30, 32, 16, 5, STEEL_D, OUT, 3);
+        rrFill(ctx, 9, 36, 32, 4, 1.5, GOLD, '');
+        circ(ctx, 25, 26, 12, STEEL, OUT, 3);
+        if (sil) circ(ctx, 25, 26, 5, CORE); else energy(ctx, 25, 26, 5, CORE, 1.6);
     });
-    Atlas.add('turret_gun', 34, 14, (ctx, w, h) => { rrFill(ctx, 2, 3, 30, 8, 3, '#546e7a', OUT, 2.5); });
+    Atlas.add('turret_gun', 34, 14, (ctx, w, h) => { rrFill(ctx, 2, 3, 30, 8, 3, GUNMETAL, OUT, 2.5); cell(ctx, 24, 4.5, 6, 5); });
     Atlas.add('mine', 30, 30, (ctx, w, h, sil) => {
         shadow(ctx, 15, 25, 11, 3, sil);
         circ(ctx, 15, 15, 10, '#546e7a', OUT, 2.5);
@@ -1284,6 +1445,96 @@ export function registerArt() {
 }
 
 // ---------------------------------------------------------------- arena floor
+/** Core ruins (key art): cracked stone slabs, glowing lava seams, cyan conduits, rune rings and crystals. */
+function drawRuins(ctx: C2D, x0: number, y0: number, W: number, H: number, rnd: () => number) {
+    ctx.save();
+    ctx.beginPath(); ctx.rect(x0, y0, W, H); ctx.clip();
+    // staggered stone slabs
+    const SW = 150, SH = 104;
+    for (let gy = y0, row = 0; gy < y0 + H; gy += SH, row++) {
+        const off = (row % 2) * SW * 0.5;
+        for (let gx = x0 - off; gx < x0 + W; gx += SW) {
+            const a = rnd() * 0.1;
+            ctx.fillStyle = rnd() < 0.5 ? `rgba(255,255,255,${a * 0.6})` : `rgba(10,5,25,${a})`;
+            ctx.fillRect(gx + 3, gy + 3, SW - 6, SH - 6);
+            ctx.strokeStyle = 'rgba(22,15,40,0.42)'; ctx.lineWidth = 3;
+            ctx.strokeRect(gx + 1.5, gy + 1.5, SW - 3, SH - 3);
+            ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(gx + 5, gy + SH - 6); ctx.lineTo(gx + 5, gy + 5); ctx.lineTo(gx + SW - 6, gy + 5); ctx.stroke();
+            // the odd broken slab
+            if (rnd() < 0.12) {
+                ctx.strokeStyle = 'rgba(22,15,40,0.5)'; ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.moveTo(gx + rnd() * SW, gy + 3); ctx.lineTo(gx + SW * 0.5 + (rnd() - 0.5) * 40, gy + SH * 0.5); ctx.lineTo(gx + rnd() * SW, gy + SH - 3); ctx.stroke();
+            }
+        }
+    }
+    // rune rings (faint cyan circles with ticks)
+    for (let i = 0; i < 4; i++) {
+        const px = x0 + 200 + rnd() * (W - 400), py = y0 + 150 + rnd() * (H - 300), r = 70 + rnd() * 50;
+        ctx.strokeStyle = 'rgba(62,240,255,0.14)'; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(px, py, r, 0, TAU); ctx.stroke();
+        ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(px, py, r * 0.72, 0, TAU); ctx.stroke();
+        for (let k = 0; k < 12; k++) {
+            const a = k / 12 * TAU;
+            ctx.beginPath(); ctx.moveTo(px + Math.cos(a) * r * 0.76, py + Math.sin(a) * r * 0.76); ctx.lineTo(px + Math.cos(a) * r * 0.94, py + Math.sin(a) * r * 0.94); ctx.stroke();
+        }
+    }
+    // cyan conduits: right-angle light lines with nodes
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (let i = 0; i < 7; i++) {
+        let px = x0 + rnd() * W, py = y0 + rnd() * H;
+        const pts = [[px, py]];
+        let horiz = rnd() < 0.5;
+        for (let k = 0; k < 3 + Math.floor(rnd() * 2); k++) {
+            const len = (60 + rnd() * 160) * (rnd() < 0.5 ? -1 : 1);
+            if (horiz) px += len; else py += len;
+            horiz = !horiz; pts.push([px, py]);
+        }
+        const path = () => { ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (const p of pts) ctx.lineTo(p[0], p[1]); };
+        path(); ctx.strokeStyle = 'rgba(15,10,35,0.55)'; ctx.lineWidth = 8; ctx.stroke();
+        ctx.shadowColor = 'rgba(62,240,255,0.9)'; ctx.shadowBlur = 10;
+        path(); ctx.strokeStyle = 'rgba(62,240,255,0.55)'; ctx.lineWidth = 3; ctx.stroke();
+        ctx.shadowBlur = 0;
+        for (const p of pts) { circ(ctx, p[0], p[1], 5, 'rgba(15,10,35,0.7)'); circ(ctx, p[0], p[1], 2.6, 'rgba(160,250,255,0.85)'); }
+    }
+    // glowing lava seams
+    for (let i = 0; i < 16; i++) {
+        let px = x0 + rnd() * W, py = y0 + rnd() * H;
+        const pts = [[px, py]];
+        let dir = rnd() * TAU;
+        for (let k = 0; k < 5 + Math.floor(rnd() * 3); k++) {
+            dir += (rnd() - 0.5) * 1.4;
+            const len = 25 + rnd() * 45;
+            px += Math.cos(dir) * len; py += Math.sin(dir) * len;
+            pts.push([px, py]);
+        }
+        const path = () => { ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (const p of pts) ctx.lineTo(p[0], p[1]); };
+        path(); ctx.strokeStyle = 'rgba(255,110,30,0.10)'; ctx.lineWidth = 34; ctx.stroke();
+        path(); ctx.strokeStyle = 'rgba(255,120,40,0.16)'; ctx.lineWidth = 18; ctx.stroke();
+        path(); ctx.strokeStyle = 'rgba(25,8,12,0.8)'; ctx.lineWidth = 10; ctx.stroke();
+        ctx.shadowColor = 'rgba(255,110,30,0.95)'; ctx.shadowBlur = 14;
+        path(); ctx.strokeStyle = '#ff6a1e'; ctx.lineWidth = 5.5; ctx.stroke();
+        ctx.shadowBlur = 0;
+        path(); ctx.strokeStyle = '#ffd98a'; ctx.lineWidth = 2; ctx.stroke();
+    }
+    // crystal clusters
+    const shard = (x: number, y: number, hgt: number, wd: number, lean: number) => {
+        const tx = x + lean, ty = y - hgt;
+        poly(ctx, [x - wd, y, tx - wd * 0.3, ty + hgt * 0.15, tx, ty, tx + wd * 0.35, ty + hgt * 0.2, x + wd, y], '#46e3f5', 'rgba(16,20,48,0.85)', 2);
+        poly(ctx, [x - wd * 0.2, y, tx - wd * 0.1, ty + hgt * 0.12, tx, ty, x + wd * 0.5, y - 1], '#c6fbff', '', 0);
+    };
+    for (let i = 0; i < 18; i++) {
+        const px = x0 + 40 + rnd() * (W - 80), py = y0 + 40 + rnd() * (H - 80);
+        const g = ctx.createRadialGradient(px, py - 10, 2, px, py - 10, 46);
+        g.addColorStop(0, 'rgba(62,240,255,0.30)'); g.addColorStop(1, 'rgba(62,240,255,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(px, py - 10, 46, 0, TAU); ctx.fill();
+        ell(ctx, px, py + 2, 18, 6, 'rgba(10,5,25,0.35)');
+        const n = 3 + Math.floor(rnd() * 3);
+        for (let k = 0; k < n; k++) shard(px + (k - n / 2) * 7 + rnd() * 4, py + rnd() * 4, 14 + rnd() * 18, 4 + rnd() * 3, (k - n / 2) * 4);
+    }
+    ctx.restore();
+}
+
 /**
  * Arena floor texture. `res` = texture pixels per world unit (sharper floor on dense phone screens).
  * `pools` are lava pools (world coordinates, origin at the arena center, y up).
@@ -1351,6 +1602,7 @@ export function drawArena(W: number, H: number, border: number, res: number, th:
             ctx.stroke();
         }
     }
+    if (th.deco === 'ruins') drawRuins(ctx, x0, y0, W, H, rnd);
     // specks
     for (let i = 0; i < 2600; i++) {
         const px = x0 + rnd() * W, py = y0 + rnd() * H;
@@ -1381,6 +1633,11 @@ export function drawArena(W: number, H: number, border: number, res: number, th:
             poly(ctx, [px, py - s * 1.6, px + s * 0.6, py, px, py + s * 0.3, px - s * 0.6, py], th.tuft, 'rgba(40,70,100,0.6)', 1.2);
         } else if (th.deco === 'ember') {
             circ(ctx, px, py, 1.5 + rnd() * 2, th.tuft);
+        } else if (th.deco === 'ruins') {
+            // drifting sparks: mostly cyan core dust, some lava embers
+            const ember = rnd() < 0.35;
+            circ(ctx, px, py, 3 + rnd() * 2, ember ? 'rgba(255,140,50,0.14)' : 'rgba(62,240,255,0.12)');
+            circ(ctx, px, py, 1 + rnd() * 1.2, ember ? 'rgba(255,190,90,0.8)' : th.tuft);
         } else if (th.deco === 'sand' || th.deco === 'metal') {
             circ(ctx, px, py, 1.2 + rnd() * 1.6, th.tuft);
         } else if (th.deco === 'stars') {

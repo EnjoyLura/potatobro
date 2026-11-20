@@ -15,7 +15,7 @@ export const COL = {
     good: '#7dff8a',
     bad: '#ff6b6b',
     gold: '#ffc93c',
-    mat: '#69f0ae',
+    mat: '#5eeeff',
     accent: '#ff8a3d',
     blue: '#4fc3f7',
     btn: '#f8c331',        // primary action (yellow, dark text)

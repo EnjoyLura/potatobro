@@ -11,7 +11,7 @@ export interface ArenaTheme {
     pebble: [string, string];      // pebble fills
     tuft: string;                  // grass tufts / crystals / embers
     rim: string;                   // jagged cliff rim
-    deco: 'grass' | 'ice' | 'ember' | 'grid' | 'sand' | 'metal' | 'stars';
+    deco: 'grass' | 'ice' | 'ember' | 'grid' | 'sand' | 'metal' | 'stars' | 'ruins';
 }
 
 export interface StageDef {
@@ -35,11 +35,11 @@ export interface StageDef {
 
 export const STAGES: StageDef[] = [
     {
-        id: 'hive', name: '荒原虫巢', en: 'WASTELAND HIVE', desc: '虫群最早出没的荒原，一切从这里开始。',
+        id: 'hive', name: '核芯废墟', en: 'CORE RUINS', desc: '核芯坠落的古城废墟，怪潮从熔岩裂缝中涌出。',
         icon: 'e_grub', aw: 1800, ah: 1150,
         theme: {
-            outside: '#17121a', floor: ['#8a7560', '#6e5b4a'], patch: ['rgba(60,45,35,0.08)', 'rgba(255,240,210,0.05)'],
-            speck: ['rgba(45,35,30,0.35)', 'rgba(255,240,220,0.15)'], pebble: ['#9b8a78', '#5f5247'], tuft: 'rgba(48,40,52,0.8)', rim: '#2a1d24', deco: 'grass',
+            outside: '#0b0815', floor: ['#6c6390', '#4a4168'], patch: ['rgba(20,10,40,0.10)', 'rgba(190,160,255,0.05)'],
+            speck: ['rgba(20,12,35,0.30)', 'rgba(220,200,255,0.12)'], pebble: ['#7d72a0', '#3e3558'], tuft: 'rgba(62,240,255,0.75)', rim: '#140f22', deco: 'ruins',
         },
         rules: [
             { type: 'grub', from: 1, interval: 2.4, group: 3, groupW: 0.45 },

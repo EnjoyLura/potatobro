@@ -20,7 +20,7 @@ export interface CharDef {
 
 export const CHARACTERS: CharDef[] = [
     {
-        id: 'unit', name: '标准型', title: '均衡的量产机体', color: '#f4f1e8', accent: '#4fc3f7', accessory: 'antenna',
+        id: 'unit', name: '标准型', title: '均衡的量产机体', color: '#f4f1e8', accent: '#3ef0ff', accessory: 'antenna',
         mods: {}, weapons: ['fist', 'pistol', 'blade', 'slingshot', 'wand', 'smg'],
         traits: ['没有任何加成或惩罚', '适合新手熟悉玩法'],
     },

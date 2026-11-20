@@ -41,20 +41,20 @@ export interface EnemyDef {
 type Def = Omit<EnemyDef, 'id' | 'sprite'> & { sprite?: string };
 const D: { [id: string]: Def } = {
     // ---------------------------------------------------------------- shared (wasteland hive)
-    grub: { name: '幼虫', hp: 3, hpW: 2, dmg: 1, dmgW: 0.6, speed: 165, r: 22, mats: 1, ai: 'chase', color: [126, 87, 194], desc: '最常见的虫群成员，数量众多，径直扑向目标。' },
-    runner: { name: '疾行虫', hp: 2, hpW: 1.2, dmg: 1, dmgW: 0.55, speed: 270, r: 18, mats: 1, ai: 'runner', color: [224, 82, 151], desc: '身体脆弱但速度极快，会绕着弯冲过来。' },
-    spitter: { name: '喷吐者', hp: 8, hpW: 2, dmg: 1, dmgW: 0.8, speed: 130, r: 24, mats: 1, ai: 'spitter', color: [102, 187, 106], desc: '保持距离并喷吐酸液弹，优先清理。' },
-    charger: { name: '冲锋兽', hp: 10, hpW: 3, dmg: 2, dmgW: 0.8, speed: 120, r: 26, mats: 2, ai: 'charger', kbRes: 0.3, color: [239, 108, 58], desc: '蓄力后高速直线冲锋，看准时机侧身躲开。' },
-    splitter: { name: '分裂球', hp: 12, hpW: 3, dmg: 1, dmgW: 0.7, speed: 120, r: 28, mats: 1, ai: 'splitter', child: 'mini', color: [66, 165, 245], desc: '被击破后分裂成数个小分裂球。' },
-    mini: { name: '小分裂球', hp: 3, hpW: 1, dmg: 1, dmgW: 0.4, speed: 210, r: 15, mats: 1, ai: 'mini', color: [66, 165, 245], desc: '分裂球的碎片，又小又快。' },
-    brute: { name: '巨甲虫', hp: 30, hpW: 9, dmg: 3, dmgW: 1, speed: 105, r: 38, mats: 3, ai: 'chase', kbRes: 0.7, color: [94, 75, 139], desc: '厚重甲壳几乎不受击退，伤害很高。' },
-    hatcher: { name: '孵化母虫', hp: 20, hpW: 5, dmg: 1, dmgW: 0.5, speed: 55, r: 32, mats: 3, ai: 'hatcher', kbRes: 0.6, child: 'grub', color: [173, 78, 122], desc: '行动缓慢，不断孵化幼虫，越早击杀越好。' },
-    bomber: { name: '自爆虫', hp: 6, hpW: 2, dmg: 4, dmgW: 1.2, speed: 200, r: 22, mats: 1, ai: 'bomber', color: [229, 57, 53], desc: '靠近后引爆自己，造成范围伤害。' },
+    grub: { name: '幼虫', hp: 3, hpW: 2, dmg: 1, dmgW: 0.6, speed: 165, r: 22, mats: 1, ai: 'chase', color: [107, 53, 176], desc: '最常见的虫群成员，数量众多，径直扑向目标。' },
+    runner: { name: '疾行虫', hp: 2, hpW: 1.2, dmg: 1, dmgW: 0.55, speed: 270, r: 18, mats: 1, ai: 'runner', color: [155, 63, 214], desc: '身体脆弱但速度极快，会绕着弯冲过来。' },
+    spitter: { name: '喷吐者', hp: 8, hpW: 2, dmg: 1, dmgW: 0.8, speed: 130, r: 24, mats: 1, ai: 'spitter', color: [77, 58, 166], desc: '保持距离并喷吐酸液弹，优先清理。' },
+    charger: { name: '冲锋兽', hp: 10, hpW: 3, dmg: 2, dmgW: 0.8, speed: 120, r: 26, mats: 2, ai: 'charger', kbRes: 0.3, color: [125, 47, 158], desc: '蓄力后高速直线冲锋，看准时机侧身躲开。' },
+    splitter: { name: '分裂球', hp: 12, hpW: 3, dmg: 1, dmgW: 0.7, speed: 120, r: 28, mats: 1, ai: 'splitter', child: 'mini', color: [69, 82, 201], desc: '被击破后分裂成数个小分裂球。' },
+    mini: { name: '小分裂球', hp: 3, hpW: 1, dmg: 1, dmgW: 0.4, speed: 210, r: 15, mats: 1, ai: 'mini', color: [116, 128, 234], desc: '分裂球的碎片，又小又快。' },
+    brute: { name: '巨甲虫', hp: 30, hpW: 9, dmg: 3, dmgW: 1, speed: 105, r: 38, mats: 3, ai: 'chase', kbRes: 0.7, color: [63, 42, 107], desc: '厚重甲壳几乎不受击退，伤害很高。' },
+    hatcher: { name: '孵化母虫', hp: 20, hpW: 5, dmg: 1, dmgW: 0.5, speed: 55, r: 32, mats: 3, ai: 'hatcher', kbRes: 0.6, child: 'grub', color: [140, 47, 134], desc: '行动缓慢，不断孵化幼虫，越早击杀越好。' },
+    bomber: { name: '自爆虫', hp: 6, hpW: 2, dmg: 4, dmgW: 1.2, speed: 200, r: 22, mats: 1, ai: 'bomber', color: [217, 58, 43], desc: '靠近后引爆自己，造成范围伤害。' },
     looter: { name: '宝藏虫', hp: 15, hpW: 5, dmg: 0, dmgW: 0, speed: 230, r: 24, mats: 7, ai: 'looter', neutral: true, color: [255, 202, 40], desc: '背着晶体四处逃窜，击杀可获得大量晶体和补给箱。' },
     tree: { name: '晶体树', hp: 10, hpW: 5, dmg: 0, dmgW: 0, speed: 0, r: 30, mats: 3, ai: 'tree', neutral: true, kbRes: 1, color: [38, 198, 218], desc: '不会攻击。打碎它能得到晶体和恢复生命的果实。' },
-    juggernaut: { name: '裂甲巨兽', sprite: 'e_jugg', hp: 900, hpW: 60, dmg: 6, dmgW: 1.2, speed: 115, r: 60, mats: 25, ai: 'juggernaut', kbRes: 0.95, elite: true, color: [163, 59, 59], desc: '精英。会跺地震荡并发起冲撞，血量极高。' },
+    juggernaut: { name: '裂甲巨兽', sprite: 'e_jugg', hp: 900, hpW: 60, dmg: 6, dmgW: 1.2, speed: 115, r: 60, mats: 25, ai: 'juggernaut', kbRes: 0.95, elite: true, color: [122, 42, 90], desc: '精英。会跺地震荡并发起冲撞，血量极高。' },
     queen: { name: '毒雾女王', hp: 750, hpW: 55, dmg: 5, dmgW: 1.1, speed: 95, r: 55, mats: 25, ai: 'queen', kbRes: 0.95, elite: true, summon: ['runner', 'spitter'], color: [76, 175, 80], desc: '精英。扇形喷吐毒弹，并召唤疾行虫与喷吐者。' },
-    boss: { name: '星核吞噬者', hp: 4500, hpW: 0, dmg: 8, dmgW: 0, speed: 110, r: 80, mats: 60, ai: 'boss', kbRes: 1, elite: true, boss: true, summon: ['charger', 'grub'], color: [91, 42, 134], desc: '荒原虫巢的首领。弹幕、冲撞、召唤样样精通。' },
+    boss: { name: '星核吞噬者', hp: 4500, hpW: 0, dmg: 8, dmgW: 0, speed: 110, r: 80, mats: 60, ai: 'boss', kbRes: 1, elite: true, boss: true, summon: ['charger', 'grub'], color: [91, 42, 134], desc: '核芯废墟的首领。弹幕、冲撞、召唤样样精通。' },
 
     // ---------------------------------------------------------------- frozen rift
     frostgrub: { name: '霜甲虫', stage: 'frost', hp: 5, hpW: 2.6, dmg: 1, dmgW: 0.6, speed: 145, r: 23, mats: 1, ai: 'chase', kbRes: 0.2, art: { base: 'e_grub', hue: 200, light: 0.08, overlay: 'ice' }, color: [120, 200, 255], desc: '覆着冰壳的幼虫，比普通幼虫更耐打。' },

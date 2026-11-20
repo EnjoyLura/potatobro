@@ -16,6 +16,8 @@ export const BORDER = 160;
 let HALF_W = 900, HALF_H = 575;
 const PLAYER_R = 18;
 const MAX_ENEMIES = 300;
+// weapons circle the player on a glowing ring (key art: "six weapons in orbit")
+const ORBIT_X = 54, ORBIT_Y = 40, ORBIT_SPEED = 0.8;
 // Global difficulty (V1.8 tuning: many more enemies, more health, ramping from mid-run)
 const SPAWN_COUNT = 2.0;    // enemies per spawn burst
 const SPAWN_RATE = 0.7;     // spawn interval multiplier (lower = more often)
@@ -93,7 +95,7 @@ class Marker { x = 0; y = 0; t = 0; type = ''; spr: Sprite; alive = true; elite 
 
 class WeaponInst {
     def: WeaponDef; tier = 1; uid = 0; spr: Sprite; cd = 0; angle = 0;
-    bx = 0; by = 0;           // rest position
+    slot = 0;                 // angle on the weapon orbit ring
     x = 0; y = 0;             // current base position
     animT = -1; animDur = 0; reach = 0; hitIds: number[] = []; sweepFrom = 0; sweepTo = 0; recoil = 0;
 }
@@ -110,7 +112,7 @@ export class World {
     root: Node;
     run: Run = null;
     // layers
-    lGround: Node; lDecal: Node; lPickup: Node; lStruct: Node; lEnemy: Node; lPlayer: Node; lWeapon: Node; lBullet: Node; lFx: Node; lGlow: Node; lNum: Node;
+    lGround: Node; lDecal: Node; lAura: Node; lPickup: Node; lStruct: Node; lEnemy: Node; lPlayer: Node; lWeapon: Node; lBullet: Node; lFx: Node; lGlow: Node; lNum: Node;
     // feel: hit-stop freezes the simulation for a few frames, slow-mo eases back to full speed
     hitStop = 0; slowT = 0; slowDur = 0; kickX = 0; kickY = 0;
     pools: { [k: string]: SpritePool } = {};
@@ -143,6 +145,7 @@ export class World {
         this.root = mkNode('World', parent);
         this.lGround = mkNode('ground', this.root);
         this.lDecal = mkNode('decal', this.root);
+        this.lAura = mkNode('aura', this.root);
         this.lPickup = mkNode('pickup', this.root);
         this.lStruct = mkNode('struct', this.root);
         this.lEnemy = mkNode('enemy', this.root);
@@ -165,7 +168,12 @@ export class World {
         fs.sizeMode = Sprite.SizeMode.CUSTOM;
         this.floor = fs;
         this.setArena(STAGES[0]);
-        // player
+        // player and the glowing orbit ring its weapons circle on
+        this.orbitNode = mkNode('orbit', this.lAura);
+        this.orbitNode.setScale(1, ORBIT_Y / ORBIT_X, 1);
+        this.orbitSpr = mkSprite(this.orbitNode, 'orbit', ORBIT_X * 2.22, ORBIT_X * 2.22);
+        const am = additiveMaterial();
+        if (am) this.orbitSpr.customMaterial = am;
         this.playerSpr = mkSprite(this.lPlayer, 'c_unit');
         this.root.active = false;
     }
@@ -276,8 +284,7 @@ export class World {
             const wi = new WeaponInst();
             wi.def = WEAPON_MAP[ow.id]; wi.tier = ow.tier; wi.uid = ow.uid;
             wi.spr = mkSprite(this.lWeapon, wi.def.sprite, undefined, undefined, 0.22, 0.5);
-            const a = n === 1 ? -0.3 : (i / n) * TAU + Math.PI / 2;
-            wi.bx = Math.cos(a) * 44; wi.by = Math.sin(a) * 32 - 4;
+            wi.slot = n === 1 ? -0.3 : (i / n) * TAU + Math.PI / 2;
             wi.angle = 0;
             wi.cd = rand(0.1, 0.5);
             // tier tint (subtle glow on higher tiers)
@@ -484,7 +491,12 @@ export class World {
 
     renderPlayer(dt: number) {
         const n = this.playerSpr.node;
+        this.orbitNode.active = !this.dead && this.weapons.length > 0;
         if (this.dead) return;
+        // orbit ring: follows the body center, turns slowly and breathes
+        this.orbitNode.setPosition(this.px, this.py + 6);
+        this.orbitSpr.node.angle = -this.time * 40;
+        setAlpha(this.orbitSpr, 150 + Math.sin(this.time * 3) * 50);
         const bob = this.walkT > 0 ? Math.sin(this.walkT) * 0.07 : Math.sin(this.time * 3) * 0.025;
         n.setPosition(this.px, this.py + 14 + (this.walkT > 0 ? Math.abs(Math.sin(this.walkT)) * 3 : 0));
         n.setScale(this.facing * (1 - bob * 0.6), 1 + bob, 1);
@@ -495,6 +507,7 @@ export class World {
         setAlpha(this.playerSpr, blink ? 120 : 255);
     }
     private playerSprCur = '';
+    orbitNode: Node; orbitSpr: Sprite;
 
     healPlayer(v: number) {
         const run = this.run;
@@ -1277,7 +1290,8 @@ export class World {
         if (this.dead) return;
         for (const wi of this.weapons) {
             const def = wi.def;
-            const restX = this.px + wi.bx, restY = this.py + wi.by;
+            const oa = wi.slot + this.time * ORBIT_SPEED;
+            const restX = this.px + Math.cos(oa) * ORBIT_X, restY = this.py + Math.sin(oa) * ORBIT_Y - 4;
             const range = this.weaponRange(def);
             if (wi.animT >= 0) {
                 this.animateMelee(wi, dt, restX, restY);
@@ -1843,6 +1857,8 @@ export class World {
         const pop = this.spawnFx(e.def.sprite + '_w', e.x, e.y + e.r * 0.3, 0, 0, 0.12, e.scale, e.scale * 1.35, 230, 0, light);
         pop.sx = e.flip;
         this.glow('glow', e.x, e.y + 10, 0, 0, 0.16, 0.8 * k, 1.9 * k, 220, light);
+        // small fireball: monsters burst like in the key art
+        this.glow('b_fire', e.x, e.y + 12, 0, 40, 0.24, 0.7 * k, 1.6 * k, 230, [255, 255, 255]);
         this.glow('shock', e.x, e.y + 10, 0, 0, 0.2, 0.12 * k, 0.6 * k, 220, light);
         this.gibs(e.x, e.y, col, e.def.elite ? 16 : 5 + Math.min(3, Math.floor(e.r / 14)), e.def.elite ? 1.5 : Math.min(1.3, k));
         this.spawnBurst(e.x, e.y, col, e.def.elite ? 24 : 6, e.def.elite ? 420 : 240);
