@@ -15,13 +15,14 @@ export const BORDER = 160;
 // arena half size; set per stage by World.setArena
 let HALF_W = 900, HALF_H = 575;
 const PLAYER_R = 18;
-const MAX_ENEMIES = 190;
-// Global difficulty (V1.6 tuning: more enemies, more health, ramping later in a run)
-const SPAWN_COUNT = 1.25;   // enemies per spawn burst
-const SPAWN_RATE = 0.88;    // spawn interval multiplier (lower = more often)
-const ENEMY_HP = 1.2;       // regular enemy health
-const ELITE_HP = 1.15;      // elites and bosses
-const LATE_HP = 0.02;       // extra health per wave after wave 10 (+2% each)
+const MAX_ENEMIES = 230;
+// Global difficulty (V1.7 tuning: more enemies, more health, ramping from mid-run)
+const SPAWN_COUNT = 1.5;    // enemies per spawn burst
+const SPAWN_RATE = 0.8;     // spawn interval multiplier (lower = more often)
+const ENEMY_HP = 1.45;      // regular enemy health
+const ELITE_HP = 1.35;      // elites and bosses
+const LATE_FROM = 6;        // wave after which health keeps ramping
+const LATE_HP = 0.03;       // extra health per wave after LATE_FROM (+3% each)
 
 export interface WorldHost {
     onWaveEnd(): void;
@@ -663,7 +664,7 @@ export class World {
         e.x = x; e.y = y;
         const w = run.wave;
         const dd = run.dangerDef;
-        let hp = (def.hp + def.hpW * (w - 1)) * (def.neutral ? 1 : (def.elite ? ELITE_HP : ENEMY_HP) * (1 + Math.max(0, w - 10) * LATE_HP));
+        let hp = (def.hp + def.hpW * (w - 1)) * (def.neutral ? 1 : (def.elite ? ELITE_HP : ENEMY_HP) * (1 + Math.max(0, w - LATE_FROM) * LATE_HP));
         let dmg = def.dmg + def.dmgW * (w - 1);
         if (def.boss) { hp = def.hp * ELITE_HP; dmg = def.dmg; }
         if (run.endless && w > 20) { const k = 1 + (w - 20) * 0.25; hp *= k * k; dmg *= k; }

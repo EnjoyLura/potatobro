@@ -104,16 +104,16 @@ Monster art comes from three sources in `core/Art.ts`: hand-drawn base enemies (
   - If a sample fails to load, that sound stays silent.
 - **Hits**: enemies flash white, squash, and get an impact star plus directional sparks. Crits add a gold ring, a small shake and a bigger number pop. Damage numbers abbreviate: 1.2K, 1.2W (万).
 - **Taking damage**: 0.75 s of invulnerability after each hit (the player blinks).
-- **Difficulty tuning** (constants at the top of `game/World.ts`): spawn bursts ×1.25, spawn intervals ×0.88, regular enemy HP ×1.2, elite/boss HP ×1.15, plus 2% enemy HP per wave after wave 10; up to 190 enemies at once.
+- **Difficulty tuning** (constants at the top of `game/World.ts`): spawn bursts ×1.5, spawn intervals ×0.8, regular enemy HP ×1.45, elite/boss HP ×1.35, plus 3% enemy HP per wave after wave 6; up to 230 enemies at once.
 - **Kills**: white silhouette pop, glow ring, outlined gibs that arc, bounce and leave droplet stains, plus a ground splat.
 - **Explosions**: flash, fireballs, shock ring, smoke, embers and a scorch mark.
 - **Guns**: directional muzzle flash, tracers, ejected shell casings, and camera recoil kick on heavy weapons. Melee has thrust streaks and a double slash arc.
 - **Time**: hit-stop when the player is hurt, and hit-stop plus slow-mo on elite and boss kills and on death. A red screen flash plays on taking damage.
 - Glows use a shared additive-blend sprite material (`core/Nodes.ts: additiveMaterial`) on their own layer, so they batch together.
 
-## Ads (reserved)
+## Ads
 
-Rewarded video ads use `tap.createRewardedVideoAd` (`core/Ads.ts`). Ad filing is under review, so the ad buttons are placeholders: they show, and tapping one says ads are coming soon (no reward).
+Rewarded video ads use the TapTap host's `tap.createRewardedVideoAd` (`core/Ads.ts`), the same flow as S5Game's runtime bridge: a fresh ad object per request, `load()` then `show()`, the reward only when `onClose` reports `isEnded`, then `destroy()`. One request runs at a time, and a 120 s timeout frees a stuck one. Ads are switched on for the game in the TapTap developer center (商店 → 小游戏广告); H5 mini games have no ad space id, so the ad is created without `adUnitId`. Outside the TapTap host the buttons still show and say ads are not supported here. A failure toast shows the host error code to help debugging.
 
 | Slot | Where | Reward |
 |---|---|---|
@@ -123,7 +123,7 @@ Rewarded video ads use `tap.createRewardedVideoAd` (`core/Ads.ts`). Ad filing is
 | `crate` | supply crate screen | take the item plus another of the same quality (once per wave) |
 | `startBonus` | starting weapon screen | +30 crystals at the start (once per run) |
 
-To go live: create rewarded video ad units in the TapTap console, paste their ids into `AD_UNITS` in `core/Ads.ts` (one id can serve every slot) and set `Ads.ENABLED = true`. `Ads.SHOW_PLACEHOLDERS = false` hides the buttons while ads are off.
+If the platform ever requires an ad space id, put it in `AD_UNIT` in `core/Ads.ts` (`SLOT_UNITS` can give a slot its own). `Ads.SHOW_PLACEHOLDERS = false` hides the buttons outside the TapTap host.
 
 ## Code layout
 

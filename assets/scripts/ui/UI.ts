@@ -15,7 +15,7 @@ import { showCodex } from './CodexUI';
 import { showSaves, showCloudConflict } from './SaveUI';
 
 /** Shown on the main menu and settings screen; bump with each release (see changelogPopup). */
-export const VERSION = 'V1.6';
+export const VERSION = 'V1.7';
 const START_BONUS = 30;
 import { itemLines, weaponLines, classText, tierColor, statValueText, Line } from './Text';
 import { CHARACTERS, CharDef } from '../data/Characters';
