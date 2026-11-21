@@ -65,15 +65,26 @@ export function showStageSelect(ui: UI, keepChoice = false) {
     sz.node.setPosition(pw / 2 - 24, ph / 2 - 56);
     const ln = mkNode('line', info); const lg = ln.addComponent(Graphics);
     lg.fillColor = C('#ffffff', 40); lg.rect(-pw / 2 + 24, ph / 2 - 84, pw - 48, 3); lg.fill();
-    let ly = ph / 2 - 108;
-    const desc = label(info, st.desc, 18, COL.dim, { align: 'left', outline: 0, width: pw - 52, anchorY: 1, lineH: 24 });
-    desc.node.setPosition(-pw / 2 + 26, ly + 12);
+    // description + rules scroll inside the panel when they do not fit (short phone screens)
+    const tw = pw - 32, th = ph - 96;
+    const txt = scrollArea(info, tw, th);
+    txt.node.setPosition(0, ph / 2 - 90 - th / 2);
+    const tc = txt.content;
+    let ly = th / 2 - 6;
+    const desc = label(tc, st.desc, 18, COL.dim, { align: 'left', outline: 0, width: tw - 20, anchorY: 1, lineH: 24 });
+    desc.node.setPosition(-tw / 2 + 10, ly);
     desc.updateRenderData(true);
-    ly -= 22 + Math.max(0, desc.node.getComponent(UITransform).height - 24);
+    ly -= desc.node.getComponent(UITransform).height + 4;
     for (const m of st.mods) {
-        const l = label(info, '- ' + m, 20, '#ffffff', { align: 'left', outline: 0 });
-        l.node.setPosition(-pw / 2 + 26, ly - 8);
-        ly -= 28;
+        const l = label(tc, '- ' + m, 20, '#ffffff', { align: 'left', outline: 0, width: tw - 20, anchorY: 1, lineH: 26 });
+        l.node.setPosition(-tw / 2 + 10, ly);
+        l.updateRenderData(true);
+        ly -= l.node.getComponent(UITransform).height + 2;
+    }
+    txt.setHeight(th / 2 - ly + 6);
+    if (th / 2 - ly + 6 > th + 2) {
+        const more = label(info, '▼ 滑动查看', 13, COL.dim, { align: 'right', outline: 0 });
+        more.node.setPosition(pw / 2 - 18, -ph / 2 + 12);
     }
 
     // ---- difficulty row

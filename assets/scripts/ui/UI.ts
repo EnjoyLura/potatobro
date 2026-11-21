@@ -6,7 +6,7 @@ import { Sfx } from '../core/Sfx';
 import { Save } from '../core/Save';
 import {
     COL, C, panel, shadowPanel, label, button, Btn, blocker, bar, Bar, icon, iconFit, popIn, clearChildren, size, opacity, tappable, tapSound, drawRR,
-    pill, slider, toggle, cellBg, adButton,
+    pill, slider, toggle, cellBg, adButton, scrollArea,
 } from './UIKit';
 import { Ads } from '../core/Ads';
 import { STAGES, StageDef, ENDLESS } from '../data/Stages';
@@ -343,6 +343,7 @@ export class UI {
         };
         swRow('伤害数字', () => Save.data.numbers, v => { Save.data.numbers = v; });
         swRow('屏幕震动', () => Save.data.shake, v => { Save.data.shake = v; });
+        swRow('受伤红屏', () => Save.data.hurtFlash, v => { Save.data.hurtFlash = v; });
 
         const back = pill(s, Math.min(300, this.R - (rowX + rowW / 2) - 60), 70, '返回', () => {
             if (fromPause) this.showPause(); else this.showMenu();
@@ -639,17 +640,24 @@ export class UI {
         } else if (this.bossNode.active) this.bossNode.active = false;
         // low hp vignette
         const k = hp / mhp;
-        let va = k < 0.4 ? Math.round((0.4 - k) / 0.4 * 200 + (Math.sin(Date.now() / 150) + 1) * 15) : 0;
-        // red flash when hit, fading over ~0.35 s
+        const flash = Save.data.hurtFlash;
+        let va = k < 0.4 ? Math.round((0.4 - k) / 0.4 * 160 + (flash ? (Math.sin(Date.now() / 300) + 1) * 10 : 0)) : 0;
+        // soft red edge when hit, fading over ~0.25 s (strength set in flashHurt)
         const now = Date.now();
         if (this.hurtAt) {
-            const h = 1 - (now - this.hurtAt) / 350;
-            if (h > 0) va = Math.max(va, Math.round(230 * h)); else this.hurtAt = 0;
+            const h = 1 - (now - this.hurtAt) / 250;
+            if (h > 0) va = Math.max(va, Math.round(this.hurtPeak * h)); else this.hurtAt = 0;
         }
         if (L.va !== va) { L.va = va; setAlpha(this.vignette, va); }
     }
-    private hurtAt = 0;
-    flashHurt() { this.hurtAt = Date.now(); }
+    private hurtAt = 0; private hurtPeak = 0;
+    /** Hit flash: soft, and much weaker when hits come back to back (late-game crowds). Off in settings = none. */
+    flashHurt() {
+        if (!Save.data.hurtFlash) return;
+        const now = Date.now();
+        this.hurtPeak = this.hurtAt && now - this.hurtAt < 1200 ? 55 : 110;
+        this.hurtAt = now;
+    }
 
     toast(text: string, color = COL.gold, y = 120, size = 34) {
         const l = label(this.popup, text, size, color, { outline: 5 });
@@ -665,27 +673,39 @@ export class UI {
         const p = mkNode('stats', parent);
         size(p, w, h); // tappable (popup close) needs a UITransform
         shadowPanel(p, w, h, COL.panel);
-        const t = label(p, '属性', 26, COL.gold);
-        t.node.setPosition(0, h / 2 - 24);
+        const t = label(p, '属性', 24, COL.gold);
+        t.node.setPosition(0, h / 2 - 22);
         const prim = STAT_DEFS.filter(d => d.primary);
         const sec = STAT_DEFS.filter(d => !d.primary && Math.abs((run.stats as any)[d.key]) > 0.01);
-        const rows = prim.length + (sec.length ? sec.length + 1 : 0);
-        const rowH = Math.min(28, (h - 60) / rows);
-        const fs = Math.max(14, Math.min(19, Math.floor(rowH * 0.72)));
-        let y = h / 2 - 54;
-        const row = (name: string, v: number, key: string, color?: string) => {
-            const nl = label(p, name, fs, color || COL.text, { align: 'left', outline: 2 });
-            nl.node.setPosition(-w / 2 + 16, y);
+        const avail = h - 58;
+        // long secondary lists go into two columns when one column would squash the rows
+        const twoCol = sec.length > 1 && avail / (prim.length + 1 + sec.length) < 19;
+        const secRows = twoCol ? Math.ceil(sec.length / 2) : sec.length;
+        const rows = prim.length + (sec.length ? secRows + 1 : 0);
+        const rowH = Math.min(28, avail / rows);
+        const fs = Math.max(11, Math.min(19, Math.floor(rowH * 0.78)));
+        let y = h / 2 - 48;
+        const row = (name: string, v: number, key: string, color: string, x0: number, x1: number, f: number) => {
+            const nl = label(p, name, f, color, { align: 'left', outline: 2 });
+            nl.node.setPosition(x0, y);
             const valColor = key === 'maxHp' ? COL.text : (v > 0.01 ? (statIsGood(key, v) ? COL.good : COL.bad) : v < -0.01 ? (statIsGood(key, v) ? COL.good : COL.bad) : COL.text);
-            const vl = label(p, statValueText(key, v), fs, valColor, { align: 'right', outline: 2 });
-            vl.node.setPosition(w / 2 - 16, y);
-            y -= rowH;
+            const vl = label(p, statValueText(key, v), f, valColor, { align: 'right', outline: 2 });
+            vl.node.setPosition(x1, y);
         };
-        for (const d of prim) row(d.name, (run.stats as any)[d.key], d.key);
+        const L = -w / 2 + 16, R = w / 2 - 16;
+        for (const d of prim) { row(d.name, (run.stats as any)[d.key], d.key, COL.text, L, R, fs); y -= rowH; }
         if (sec.length) {
             const sl = label(p, '— 其他 —', fs, COL.dim, { outline: 2 });
             sl.node.setPosition(0, y); y -= rowH;
-            for (const d of sec) row(d.name, (run.stats as any)[d.key], d.key, COL.dim);
+            // two columns: narrower cells, so the font may need to drop a little more to keep name and value apart
+            const f2 = twoCol ? Math.min(fs, Math.max(10, Math.floor((w - 32 - 16) / 2 / 7.5))) : fs;
+            for (let i = 0; i < sec.length; i++) {
+                const d = sec[i];
+                if (!twoCol) row(d.name, (run.stats as any)[d.key], d.key, COL.dim, L, R, fs);
+                else if (i % 2 === 0) row(d.name, (run.stats as any)[d.key], d.key, COL.dim, L, -8, f2);
+                else row(d.name, (run.stats as any)[d.key], d.key, COL.dim, 8, R, f2);
+                if (!twoCol || i % 2 === 1) y -= rowH;
+            }
         }
         return p;
     }
@@ -1268,23 +1288,35 @@ export class UI {
         shadowPanel(wp, 300, ph, COL.panel);
         const wl = label(wp, '最终构筑', 22, COL.gold);
         wl.node.setPosition(0, ph / 2 - 26);
-        // tap a weapon or item for its details (same cards as the shop / pause screen)
+        // all weapons and items in a clipped area that scrolls when a big build does not fit
+        const aw = 288, ah = ph - 66; // 14 px strip at the bottom for the scroll hint
+        const area = scrollArea(wp, aw, ah);
+        area.node.setPosition(0, ph / 2 - 46 - ah / 2);
+        const top = ah / 2;
+        // tap a weapon or item for its details (same cards as the shop / pause screen); a drag only scrolls
         run.weapons.forEach((w, i) => {
-            const c = this.weaponCell(wp, w, 56);
-            c.setPosition(-100 + (i % 3) * 100, ph / 2 - 85 - Math.floor(i / 3) * 66);
+            const c = this.weaponCell(area.content, w, 56);
+            c.setPosition(-100 + (i % 3) * 100, top - 34 - Math.floor(i / 3) * 66);
             const def = WEAPON_MAP[w.id];
-            tappable(c, () => this.infoPopup((pp, pw, pph) => {
+            tappable(c, () => { if (area.moved()) return; this.infoPopup((pp, pw, pph) => {
                 this.card(pp, pw - 20, pph - 20, w.tier, def.sprite, null, def.name + ' ' + TIER_NAMES[w.tier - 1], '武器 · ' + classText(def), weaponLines(def, w.tier, run.stats), true);
-            }, 360, 380));
+            }, 360, 380); });
         });
-        run.itemOrder.slice(0, 12).forEach((id, i) => {
+        const itemTop = top - 34 - Math.max(1, Math.ceil(run.weapons.length / 3)) * 66 - 6;
+        run.itemOrder.forEach((id, i) => {
             const it = ITEM_MAP[id];
-            const c = this.itemCell(wp, it, run.items[id], 36);
-            c.setPosition(-110 + (i % 6) * 44, ph / 2 - 225 - Math.floor(i / 6) * 42);
-            tappable(c, () => this.infoPopup((pp, pw, pph) => {
+            const c = this.itemCell(area.content, it, run.items[id], 36);
+            c.setPosition(-110 + (i % 6) * 44, itemTop - Math.floor(i / 6) * 44);
+            tappable(c, () => { if (area.moved()) return; this.infoPopup((pp, pw, pph) => {
                 this.card(pp, pw - 20, pph - 20, it.tier, 'g_' + it.glyph, it.color, it.name + (run.items[id] > 1 ? ` x${run.items[id]}` : ''), '物品', itemLines(it), false);
-            }, 320, 320));
+            }, 320, 320); });
         });
+        const itemRows = Math.ceil(run.itemOrder.length / 6);
+        area.setHeight(top - itemTop + (itemRows ? (itemRows - 1) * 44 + 26 : 0) + 8);
+        if (area.content.children.length && top - itemTop + itemRows * 44 > ah) {
+            const hint = label(wp, '▲▼ 滑动查看更多', 12, COL.dim, { outline: 0 });
+            hint.node.setPosition(0, -ph / 2 + 11);
+        }
         if (win && !run.endless) {
             const e = button(s, 260, 66, '继续（无尽模式）', COL.purple, () => this.host.continueEndless(), 24);
             e.node.setPosition(-290, this.B + 60);

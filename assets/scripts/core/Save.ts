@@ -16,6 +16,7 @@ export interface SaveData {
     musicVol: number;   // 0..1
     numbers: boolean;   // floating damage numbers
     shake: boolean;
+    hurtFlash: boolean; // red screen flash when hit
     // ---- progress (synced)
     bestWave: number;
     wins: { [charId: string]: number };   // highest difficulty cleared per character (-1 none)
@@ -43,7 +44,7 @@ function stableJson(v: any): string {
 
 export class Save {
     static data: SaveData = {
-        sfx: true, music: true, sfxVol: 1, musicVol: 1, numbers: true, shake: true,
+        sfx: true, music: true, sfxVol: 1, musicVol: 1, numbers: true, shake: true, hurtFlash: true,
         bestWave: 0, wins: {}, stages: {}, endless: {}, runs: 0, kills: 0, playTime: 0, codex: { e: {}, w: {}, i: {} }, savedAt: 0,
     };
     private static lastProgress = '';

@@ -529,6 +529,21 @@ export class World {
         this.showNum(this.px, this.py + 40, real, 80, 255, 120, false, true);
     }
 
+    private lastDodgeText = -9;
+    /** Dodge cue: a pale afterimage sliding away from the attacker plus a small "闪避" tag. Light on purpose. */
+    dodgeFx(src: Enemy) {
+        let ux = -this.facing, uy = 0;
+        if (src) { const dx = this.px - src.x, dy = this.py - src.y, l = Math.hypot(dx, dy); if (l > 1) { ux = dx / l; uy = dy / l; } }
+        const ghost = this.spawnFx(this.playerFrame, this.px, this.py + 14, ux * 90, uy * 90, 0.3, 1, 1.08, 140, 0, [150, 225, 255], true);
+        ghost.sx = this.facing;
+        this.glow('glow', this.px, this.py + 14, 0, 0, 0.18, 1.0, 1.5, 90, [160, 220, 255]);
+        // the tag at most every 0.6 s so high dodge builds do not fill the screen with text
+        if (this.host.numbersEnabled() && this.time - this.lastDodgeText > 0.6) {
+            this.lastDodgeText = this.time;
+            this.spawnFx('t_dodge', this.px, this.py + 62, 0, 38, 0.55, 0.85, 0.85, 230, 0, [255, 255, 255], true).ease = 0;
+        }
+    }
+
     hurtPlayer(dmg: number, src: Enemy = null) {
         if (this.iframe > 0 || this.dead || !this.running) return;
         const run = this.run;
@@ -536,8 +551,7 @@ export class World {
         if (chance(Math.min(60, st.dodge) / 100)) {
             this.iframe = 0.2;
             Sfx.dodge();
-            this.spawnFx('smoke', this.px, this.py + 10, 0, 40, 0.35, 0.7, 1.5, 170, 0, [255, 255, 255]);
-            this.glow('glow', this.px, this.py + 14, 0, 0, 0.2, 1.2, 1.8, 120, [160, 220, 255]);
+            this.dodgeFx(src);
             return;
         }
         if (this.shieldLeft > 0) {

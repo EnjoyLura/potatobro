@@ -1430,6 +1430,14 @@ export function registerArt() {
         g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(255,255,255,1)');
         ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
     });
+    // small "闪避" tag shown when the player dodges
+    Atlas.add('t_dodge', 64, 30, (ctx, w, h) => {
+        ctx.font = '900 21px "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.lineJoin = 'round'; ctx.lineWidth = 5; ctx.strokeStyle = OUT;
+        ctx.strokeText('闪避', w / 2, h / 2 + 1);
+        ctx.fillStyle = '#bfeaff'; ctx.fillText('闪避', w / 2, h / 2 + 1);
+    });
     // digits for damage numbers
     const chars = '0123456789+KW.';
     for (let i = 0; i < chars.length; i++) {

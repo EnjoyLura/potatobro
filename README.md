@@ -41,7 +41,7 @@ python tools/deploy_pages.py
 - **Shop.** The inventory (weapons, set bonuses, item rows) is measured first and the cards get the remaining height. Card text shrinks to stay above the price buttons, and extra items collapse into a "+N" cell.
 - **Exit.** The main menu has a 退出游戏 button (it replaced 全屏, which froze the game inside TapTap). After a confirm it saves, then calls the TapTap host's exit API (`exitMiniProgram`, else `exitGame`). In a browser it tries `window.close()` and otherwise tells the player to use the close button.
 - **Main menu.** Title and a stack of pill buttons (开始游戏 / 设置 / 退出游戏) in a left column, with the version below. The hero art fills the right side. 玩法 / 战绩 / 更新日志 pills run along the top right, and the records line sits at the bottom right.
-- **Settings** (from the menu or the pause screen): 游戏音乐 / 游戏音效 volume sliders, plus 伤害数字 and 屏幕震动 switches, all saved in localStorage. Bump `VERSION` in `ui/UI.ts` and add a line to `changelogPopup` with each release.
+- **Settings** (from the menu or the pause screen): 游戏音乐 / 游戏音效 volume sliders, plus 伤害数字, 屏幕震动 and 受伤红屏 switches (the hit flash is a soft red edge, weaker when hits come back to back; dodges show a faint afterimage and a small 闪避 tag at most every 0.6 s). Long text and big builds scroll inside their panels (stage info, 最终构筑) and the stats panel squeezes 其他 into two columns on short screens, all saved in localStorage. Bump `VERSION` in `ui/UI.ts` and add a line to `changelogPopup` with each release.
 
 ## Sound lab
 
