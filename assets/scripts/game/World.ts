@@ -29,6 +29,10 @@ const LATE_DMG = 0.08;      // extra damage per wave after LATE_FROM (+8% each)
 const LATE_SPEED = 0.012;   // extra move speed per wave after wave 8 (+1.2% each)
 const HIT_IFRAME = 0.5;     // invulnerability after taking a hit (s)
 const LIFESTEAL_CAP = 4;    // lifesteal heals at most this many HP per second
+// Materials from regular kills: the n-th drop of a wave happens with chance 1 / (1 + n / MAT_SOFTCAP), so a
+// wave of N drop rolls yields about S(sqrt(1 + 2N/S) - 1): ~55 at wave 1, ~150 at wave 5, ~320 at wave 12,
+// ~430 at wave 20 (it was one per roll, 1500+ per wave late). Elites and bosses always drop theirs.
+const MAT_SOFTCAP = 45;
 
 export interface WorldHost {
     onWaveEnd(): void;
@@ -123,6 +127,7 @@ export class World {
     // player
     px = 0; py = 0; pvx = 0; pvy = 0; playerSpr: Sprite; playerFrame = ''; facing = 1; iframe = 0; flashT = 0; walkT = 0;
     killCrates = 0; // crates dropped by regular kills this wave
+    matDrops = 0;   // materials dropped by regular kills this wave
     regenAcc = 0; lifestealWindow = 0; lifestealCount = 0; shieldLeft = 0; reviveLeft = 0; dead = false; deadT = 0;
     // input
     moveX = 0; moveY = 0;
@@ -241,6 +246,7 @@ export class World {
     startWave() {
         const run = this.run;
         this.killCrates = 0;
+        this.matDrops = 0;
         this.clearAll(false);
         this.dead = false;
         this.px = 0; this.py = 0;
@@ -1220,7 +1226,13 @@ export class World {
         // drops
         let mats = e.def.mats;
         if (run.special.goldKill && chance(run.special.goldKill / 100)) mats++;
-        for (let i = 0; i < mats; i++) this.spawnPickup('mat', e.x, e.y);
+        for (let i = 0; i < mats; i++) {
+            if (!e.def.elite) {
+                if (!chance(1 / (1 + this.matDrops / MAT_SOFTCAP))) continue;
+                this.matDrops++;
+            }
+            this.spawnPickup('mat', e.x, e.y);
+        }
         const luck = 1 + run.stats.luck / 100;
         if (e.def.ai === 'tree') {
             for (let i = 0; i < 2; i++) this.spawnPickup('fruit', e.x, e.y);
