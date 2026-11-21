@@ -1,5 +1,5 @@
-// Persistent progress via localStorage (guarded). Progress (not settings) is also synced to the
-// TapTap cloud save (core/CloudSave.ts).
+// Persistent progress via localStorage (guarded). Progress (not settings) is kept separable for a
+// future cloud save (removed in V1.9 for the standalone release).
 import { STAGES } from '../data/Stages';
 
 export interface Codex {

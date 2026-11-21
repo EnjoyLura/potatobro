@@ -2,7 +2,6 @@
 import { _decorator, Component, view, ResolutionPolicy, input, Input, EventKeyboard, KeyCode, game, Game, screen } from 'cc';
 import { Atlas } from './core/Atlas';
 import { registerArt } from './core/Art';
-import { CloudSave } from './core/CloudSave';
 import { Ads } from './core/Ads';
 
 /** Rewarded-ad revives allowed per run. */
@@ -53,13 +52,6 @@ export class Main extends Component implements WorldHost, UIHost {
         Sfx.startMusic();
         this.ui.showMenu();
         if (typeof document !== 'undefined') { const b = document.getElementById('boot'); if (b) b.remove(); }
-        // TapTap cloud save: compare at startup, upload progress after it changes
-        Save.onSaved = () => CloudSave.requestUpload();
-        CloudSave.onConflict = () => this.ui.showCloudConflict();
-        CloudSave.onChange = () => {
-            if (this.state === 'menu' && (this.ui.screenName === 'saves' || this.ui.screenName === 'menu') && !this.ui.popup.children.length) this.ui.refreshScreen();
-        };
-        CloudSave.init();
     }
 
     private resKey = '';

@@ -87,11 +87,11 @@ This opens http://127.0.0.1:8766/tools/sound-lab.html, a page for reviewing and 
 
 Monster art comes from three sources in `core/Art.ts`: hand-drawn base enemies (`ENEMY_DRAW`), recolored stage variants (`EnemyDef.art`: target hue, saturation, lightness, plus an ice / lava / void overlay), and a parametric creature builder (`CREATURES`: body shape, eyes, mouth, top, sides, tail, pattern, glow) used for every stage elite, boss and the new mechanic monsters. Every item has its own icon. Elite and boss sprites are packed at up to 1.75 texture pixels per unit to keep the atlas small.
 
-## Codex, saves and cloud save
+## Codex and saves
 
 - **Codex (图鉴)**: weapons, items and monsters with filters and details. Weapons and items count as discovered once seen in the shop, a crate or the weapon select; monsters once they spawn (kill counts are kept). Undiscovered entries show as silhouettes. Old saves get the first stage's monsters up to their best wave.
-- **Save**: localStorage. Settings stay on the device; progress (best wave, wins, stage clears, runs, kills, play time, codex) is the part that syncs. `savedAt` changes only when progress changes.
-- **TapTap cloud save** (`core/CloudSave.ts`): inside the TapTap app the global `tap` object is available (no SDK). One archive, `core_rush_save`, holds the progress JSON: it is written with `tap.getFileSystemManager().writeFile` and uploaded with `createArchive` / `updateArchive`. Uploads are limited to one per minute, so they are queued. At startup the archive is downloaded and compared with local progress. If they differ and this device has its own progress, a popup lets the player keep one; a device without progress takes the cloud copy silently. The 存档 screen in the menu shows both saves. In a normal browser it says cloud save is only available in TapTap.
+- **Save**: localStorage. Settings stay on the device; progress (best wave, wins, stage clears, runs, kills, play time, codex) is kept apart (`Save.progress()` / `applyProgress()`) for a future cloud sync. `savedAt` changes only when progress changes.
+- **No cloud save (V1.9)**: TapTap cloud save and its 存档 screen were removed so the game passes review as a standalone (单机) game. The old implementation (`core/CloudSave.ts`, `ui/SaveUI.ts`) is in git history before V1.9 and can be restored later.
 
 ## Feel and effects
 
@@ -131,7 +131,7 @@ If the platform ever requires an ad space id, put it in `AD_UNIT` in `core/Ads.t
 assets/scenes/main.scene      Canvas + Main component
 assets/scripts/Main.ts        entry point, game state machine
 assets/scripts/core/          Atlas (runtime texture packing), Art (procedural sprites),
-                              Sfx (synth + samples + music), Save, CloudSave (TapTap), Nodes, Util
+                              Sfx (synth + samples + music), Save, Nodes, Util
 assets/scripts/data/          Stats, Weapons, Items, Characters, Enemies, Stages, Upgrades
 assets/scripts/game/          Run (economy/inventory/shop), World (simulation)
 assets/scripts/ui/            UIKit, Text, UI (menu, settings, character/weapon select, HUD, shop,

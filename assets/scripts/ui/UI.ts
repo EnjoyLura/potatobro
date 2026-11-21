@@ -12,10 +12,9 @@ import { Ads } from '../core/Ads';
 import { STAGES, StageDef, ENDLESS } from '../data/Stages';
 import { showStageSelect } from './StageUI';
 import { showCodex } from './CodexUI';
-import { showSaves, showCloudConflict } from './SaveUI';
 
 /** Shown on the main menu and settings screen; bump with each release (see changelogPopup). */
-export const VERSION = 'V1.8';
+export const VERSION = 'V1.9';
 const START_BONUS = 30;
 import { itemLines, weaponLines, classText, tierColor, statValueText, Line } from './Text';
 import { CHARACTERS, CharDef } from '../data/Characters';
@@ -254,7 +253,7 @@ export class UI {
 
         // top right: secondary pills
         const tw = Math.min(150, (this.W - colW - 120) / 4 - 14), th = 52;
-        const tops: [string, () => void][] = [['玩法', () => this.howToPopup()], ['图鉴', () => this.showCodex()], ['存档', () => this.showSaves()]];
+        const tops: [string, () => void][] = [['玩法', () => this.howToPopup()], ['图鉴', () => this.showCodex()]];
         tops.forEach(([txt, cb], i) => {
             const b = pill(s, tw, th, txt, cb, { fontSize: 22 });
             b.node.setPosition(this.R - tw / 2 - 20 - (tops.length - 1 - i) * (tw + 14), this.T - th / 2 - 16);
@@ -269,13 +268,10 @@ export class UI {
 
     showStageSelect() { showStageSelect(this); }
     showCodex() { showCodex(this); }
-    showSaves() { showSaves(this); }
-    showCloudConflict() { showCloudConflict(this); }
-    /** Rebuild the current menu-side screen (after a resize or a cloud save change). */
+    /** Rebuild the current menu-side screen (after a resize). */
     refreshScreen() {
         switch (this.screenName) {
             case 'menu': this.showMenu(); break;
-            case 'saves': this.showSaves(); break;
             case 'stage': this.showStageSelect(); break;
             case 'codex': this.showCodex(); break;
             case 'char': this.showCharSelect(); break;
@@ -389,9 +385,10 @@ export class UI {
 
     changelogPopup() {
         this.textPopup('更新日志', [
-            `${VERSION}  难度提升（怪物更多、血量更高）；受击无敌时间延长；伤害数字缩写 K / W；升级刷新与复活（每局两次）的广告位；最终构筑可点开查看；修复属性弹窗无法关闭。`,
+            `${VERSION}  全新美术：核芯机器人主角、武器环绕光环、暗影恶魔怪群；第一关改为「核芯废墟」（熔岩裂缝、能量管线、水晶）；核芯晶石材料；击杀火焰特效。`,
+            `V1.8  难度提升（怪物更多、血量更高）；受击无敌时间延长；伤害数字缩写 K / W；升级刷新与复活（每局两次）的广告位；最终构筑可点开查看；修复属性弹窗无法关闭。`,
             `V1.5  新地图：毒沼雨林、沙海遗迹、机械废墟、星渊回廊（共 8 张）；新怪物与机制：治疗、钻地、炮塔、瞬移、环绕射击、跳跃、毒雾与灼烧痕迹；每张地图都有独立造型的精英与首领；每个关卡新增无尽模式；物品图标不再重复。`,
-            'V1.4  关卡：荒原虫巢、冰封裂谷、熔火工坊、虚空星港，各有场地、怪物、精英与首领；难度逐级解锁。图鉴（武器、物品、怪物）。TapTap 云存档。全新界面风格。',
+            'V1.4  关卡：荒原虫巢、冰封裂谷、熔火工坊、虚空星港，各有场地、怪物、精英与首领；难度逐级解锁。图鉴（武器、物品、怪物）。全新界面风格。',
             'V1.3  屏幕适配：手机竖握自动横屏、刘海屏避让、平板与带鱼屏；手机画面更清晰；新菜单与设置（音量滑条）。',
             'V1.2  音效精简：枪械与近战统一音色，击杀与点击换新音效，其余回归经典合成音；战斗 BGM。',
             'V1.1  打击感：命中停顿、爆炸与碎片特效、录音音效。',
