@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+
+  <title>核芯突围：万械狂潮</title>
+
+  <!-- viewport-fit=cover: draw under the notch; the game insets its UI with the safe-area values below -->
+  <meta name="viewport"
+        content="width=device-width,user-scalable=no,initial-scale=1,minimum-scale=1,maximum-scale=1,minimal-ui=true,viewport-fit=cover"/>
+  <meta name="description" content="核芯突围：万械狂潮（CORE RUSH: Overdrive）—— 横屏竞技场波次生存射击游戏">
+  <meta name="theme-color" content="#17131c">
+
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="核芯突围">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="screen-orientation" content="landscape">
+  <meta name="x5-orientation" content="landscape">
+
+  <meta name="renderer" content="webkit"/>
+  <meta name="force-rendering" content="webkit"/>
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+  <meta name="msapplication-tap-highlight" content="no">
+
+  <meta name="full-screen" content="yes"/>
+  <meta name="x5-fullscreen" content="true"/>
+  <meta name="360-fullscreen" content="true"/>
+  <meta name="x5-page-mode" content="app">
+
+  <link rel="stylesheet" type="text/css" href="style.css"/>
+
+  <!-- Sharp canvas on phones (both hooks are wired into the engine by tools/postbuild.py):
+       __CR_DPR_CAP: replaces the engine's devicePixelRatio cap of 2. Real ratio up to 4, so 3x/3.5x/4x
+       phones render at native resolution; desktop page zoom-out is compensated so the buffer does not
+       explode; ?dpr=2 (or 1) in the URL saves battery.
+       __CR_LABEL_SCALE: extra resolution for label text. The engine draws text at fontSize x view scale
+       and ignores node scale, so text under the scaled UI root (__CR_TEXT_SCALE, set by the game) or a
+       scaled node was stretched and soft. -->
+  <script>
+    (function () {
+      var q = 0;
+      try { q = parseFloat(new URLSearchParams(location.search).get('dpr')) || 0; } catch (e) { }
+      window.__CR_DPR_CAP = function () {
+        var real = window.devicePixelRatio || 1;
+        var zoom = (window.visualViewport && window.visualViewport.scale) || 1;
+        var cap = q > 0 ? Math.min(real, q) : Math.min(real, 4) * Math.min(1, zoom);
+        return Math.max(0.5, cap);
+      };
+      window.__CR_LABEL_SCALE = function (label) {
+        var k = window.__CR_TEXT_SCALE || 1;
+        try {
+          // a label first drawn mid pop-in (scale near 0) still gets the UI scale
+          var s = label.node.worldScale;
+          k = Math.max(k, Math.abs(s.x), Math.abs(s.y));
+        } catch (e) { }
+        return Math.min(3, k);
+      };
+    })();
+  </script>
+
+</head>
+<body>
+  <div id="GameDiv" cc_exact_fit_screen="true">
+      <div id="Cocos3dGameContainer">
+        <canvas id="GameCanvas" oncontextmenu="event.preventDefault()" tabindex="99"></canvas>
+      </div>
+    </div>
+  <!-- removed by the game once it starts (Main.onLoad) -->
+  <div id="boot">核芯突围：万械狂潮 · 加载中…</div>
+  
+
+<!-- Polyfills bundle. -->
+
+<script src="src/polyfills.bundle.js" charset="utf-8"> </script>
+
+
+<!-- SystemJS support. -->
+<script src="src/system.bundle.js" charset="utf-8"> </script>
+
+<!-- Import map -->
+<script src="src/import-map.json" type="systemjs-importmap" charset="utf-8"> </script>
+
+<script>
+    System.import('./index.js?v=1795230768').catch(function(err) { console.error(err); })
+</script>
+
+</body>
+</html>

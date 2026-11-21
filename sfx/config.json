@@ -1,0 +1,409 @@
+{
+  "version": 2,
+  "master": {
+    "sfx": 0.9,
+    "music": 0.5,
+    "thump": 1.0
+  },
+  "bgm": {
+    "file": "bgm/battle.mp3",
+    "battle": 1.0,
+    "menu": 0.55,
+    "menuCutoff": 900
+  },
+  "buses": {
+    "weapon": {
+      "label": "武器",
+      "vol": 0.75,
+      "voices": 6,
+      "busyAt": 4
+    },
+    "impact": {
+      "label": "命中",
+      "vol": 0.8,
+      "voices": 5,
+      "busyAt": 4
+    },
+    "kill": {
+      "label": "击杀",
+      "vol": 0.85,
+      "voices": 5,
+      "busyAt": 4
+    },
+    "boom": {
+      "label": "爆炸",
+      "vol": 0.9,
+      "voices": 3,
+      "busyAt": 2
+    },
+    "enemy": {
+      "label": "敌人",
+      "vol": 0.7,
+      "voices": 3,
+      "busyAt": 3
+    },
+    "pickup": {
+      "label": "拾取",
+      "vol": 0.85,
+      "voices": 4,
+      "busyAt": 5
+    },
+    "player": {
+      "label": "玩家",
+      "vol": 1.0,
+      "voices": 4,
+      "busyAt": 8
+    },
+    "event": {
+      "label": "事件",
+      "vol": 1.0,
+      "voices": 3,
+      "busyAt": 8
+    },
+    "ui": {
+      "label": "界面",
+      "vol": 1.0,
+      "voices": 3,
+      "busyAt": 8
+    }
+  },
+  "sounds": {
+    "gun": {
+      "label": "所有枪械（冲锋枪音色）",
+      "files": [
+        "shot_smg"
+      ],
+      "bus": "weapon",
+      "vol": 0.14,
+      "pv": 0.08,
+      "max": 0.2,
+      "gap": 0.05,
+      "voices": 4
+    },
+    "melee": {
+      "label": "所有近战挥舞（重锤音色）",
+      "files": [
+        "swing2"
+      ],
+      "bus": "weapon",
+      "vol": 0.18,
+      "pv": 0.08,
+      "max": 0.35,
+      "gap": 0.07,
+      "voices": 3
+    },
+    "rocket": {
+      "label": "火箭筒/榴弹",
+      "files": [],
+      "syn": "blast",
+      "bus": "weapon",
+      "vol": 1,
+      "pv": 0.08,
+      "gap": 0.1,
+      "voices": 2
+    },
+    "flame": {
+      "label": "喷火器",
+      "files": [],
+      "syn": "flame",
+      "bus": "weapon",
+      "vol": 2.5,
+      "pv": 0.08,
+      "gap": 0.12,
+      "voices": 2
+    },
+    "sling": {
+      "label": "弹弓",
+      "files": [],
+      "syn": "sling",
+      "bus": "weapon",
+      "vol": 1,
+      "pv": 0.08,
+      "gap": 0.06,
+      "voices": 3
+    },
+    "zap": {
+      "label": "雷霆法杖",
+      "files": [],
+      "syn": "zap",
+      "bus": "weapon",
+      "vol": 1,
+      "pv": 0.05,
+      "gap": 0.08,
+      "voices": 2
+    },
+    "laser": {
+      "label": "激光",
+      "files": [],
+      "syn": "laser",
+      "bus": "weapon",
+      "vol": 1,
+      "pv": 0.04,
+      "gap": 0.1,
+      "voices": 2
+    },
+    "hit": {
+      "label": "命中",
+      "files": [],
+      "syn": "hit",
+      "bus": "impact",
+      "vol": 1,
+      "pv": 0.05,
+      "gap": 0.05,
+      "voices": 4
+    },
+    "crit": {
+      "label": "暴击命中",
+      "files": [],
+      "syn": "crit",
+      "bus": "impact",
+      "vol": 1,
+      "pv": 0.05,
+      "gap": 0.08,
+      "voices": 2
+    },
+    "kill": {
+      "label": "击杀（S4Game 暴击音）",
+      "files": [
+        "kill.wav"
+      ],
+      "bus": "kill",
+      "vol": 0.32,
+      "pv": 0.1,
+      "max": 0.5,
+      "gap": 0.045,
+      "voices": 4
+    },
+    "explode": {
+      "label": "爆炸",
+      "files": [],
+      "syn": "explode",
+      "bus": "boom",
+      "vol": 0.5,
+      "pv": 0.05,
+      "gap": 0.08,
+      "voices": 3
+    },
+    "hurt": {
+      "label": "受伤",
+      "files": [],
+      "syn": "hurt",
+      "bus": "player",
+      "vol": 1,
+      "pv": 0,
+      "gap": 0.12,
+      "voices": 2,
+      "duck": 0.55
+    },
+    "dodge": {
+      "label": "闪避",
+      "files": [],
+      "syn": "dodge",
+      "bus": "player",
+      "vol": 1,
+      "pv": 0.05,
+      "gap": 0.1,
+      "voices": 2
+    },
+    "shield": {
+      "label": "护盾格挡",
+      "files": [],
+      "syn": "zap",
+      "bus": "player",
+      "vol": 1,
+      "pv": 0,
+      "gap": 0.1,
+      "voices": 2
+    },
+    "heal": {
+      "label": "回血",
+      "files": [],
+      "syn": "heal",
+      "bus": "player",
+      "vol": 1,
+      "pv": 0,
+      "gap": 0.08,
+      "voices": 2
+    },
+    "revive": {
+      "label": "复活",
+      "files": [],
+      "syn": "levelUp",
+      "bus": "player",
+      "vol": 1,
+      "pv": 0,
+      "gap": 0.5,
+      "voices": 1,
+      "duck": 0.5
+    },
+    "pickup": {
+      "label": "拾取晶体（连拾升调）",
+      "files": [],
+      "syn": "pickup",
+      "bus": "pickup",
+      "vol": 1,
+      "pv": 0,
+      "gap": 0.03,
+      "voices": 4
+    },
+    "crate": {
+      "label": "拾取补给箱",
+      "files": [],
+      "syn": "buy",
+      "bus": "pickup",
+      "vol": 1,
+      "pv": 0,
+      "gap": 0.1,
+      "voices": 2
+    },
+    "levelUp": {
+      "label": "升级",
+      "files": [],
+      "syn": "levelUp",
+      "bus": "event",
+      "vol": 1,
+      "pv": 0,
+      "gap": 0.2,
+      "voices": 1,
+      "duck": 0.6
+    },
+    "waveStart": {
+      "label": "波次开始",
+      "files": [],
+      "syn": "waveStart",
+      "bus": "event",
+      "vol": 1,
+      "pv": 0,
+      "gap": 0.3,
+      "voices": 1
+    },
+    "waveEnd": {
+      "label": "波次完成",
+      "files": [],
+      "syn": "waveEnd",
+      "bus": "event",
+      "vol": 1,
+      "pv": 0,
+      "gap": 0.3,
+      "voices": 1,
+      "duck": 0.5
+    },
+    "victory": {
+      "label": "通关",
+      "files": [],
+      "syn": "victory",
+      "bus": "event",
+      "vol": 1,
+      "pv": 0,
+      "gap": 1,
+      "voices": 1,
+      "duck": 0.4
+    },
+    "gameOver": {
+      "label": "失败",
+      "files": [],
+      "syn": "gameOver",
+      "bus": "event",
+      "vol": 1,
+      "pv": 0,
+      "gap": 1,
+      "voices": 1,
+      "duck": 0.4
+    },
+    "bossRoar": {
+      "label": "首领登场",
+      "files": [],
+      "syn": "bossRoar",
+      "bus": "event",
+      "vol": 0.6,
+      "pv": 0,
+      "gap": 1,
+      "voices": 1,
+      "duck": 0.5
+    },
+    "elite": {
+      "label": "精英来袭",
+      "files": [],
+      "syn": "bossRoar",
+      "bus": "event",
+      "vol": 0.6,
+      "pv": 0,
+      "gap": 1,
+      "voices": 1,
+      "duck": 0.5
+    },
+    "spawnWarn": {
+      "label": "刷怪预警（未使用）",
+      "files": [],
+      "syn": "spawnWarn",
+      "bus": "event",
+      "vol": 1,
+      "pv": 0,
+      "gap": 0.5,
+      "voices": 1
+    },
+    "click": {
+      "label": "点击（S5Game 点击音）",
+      "files": [
+        "click.wav"
+      ],
+      "bus": "ui",
+      "vol": 0.14,
+      "pv": 0.03,
+      "max": 0.3,
+      "gap": 0.04,
+      "voices": 2
+    },
+    "buy": {
+      "label": "购买/拿取",
+      "files": [],
+      "syn": "buy",
+      "bus": "ui",
+      "vol": 1,
+      "pv": 0,
+      "gap": 0.05,
+      "voices": 2
+    },
+    "deny": {
+      "label": "拒绝/钱不够",
+      "files": [],
+      "syn": "deny",
+      "bus": "ui",
+      "vol": 1,
+      "pv": 0,
+      "gap": 0.1,
+      "voices": 1
+    },
+    "reroll": {
+      "label": "刷新商店",
+      "files": [],
+      "syn": "reroll",
+      "bus": "ui",
+      "vol": 1,
+      "pv": 0,
+      "gap": 0.05,
+      "voices": 2
+    },
+    "sell": {
+      "label": "出售/回收",
+      "files": [],
+      "syn": "buy",
+      "bus": "ui",
+      "vol": 1,
+      "pv": 0,
+      "gap": 0.05,
+      "voices": 2
+    },
+    "combine": {
+      "label": "武器合成",
+      "files": [],
+      "syn": "levelUp",
+      "bus": "ui",
+      "vol": 1,
+      "pv": 0,
+      "gap": 0.1,
+      "voices": 1
+    }
+  },
+  "review": {}
+}
