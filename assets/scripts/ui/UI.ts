@@ -82,6 +82,8 @@ export class UI {
     scale = 1;
     /** Safe-area insets (notch, home indicator) in UI units, already applied to W/H and the root position. */
     safe = { l: 0, r: 0, t: 0, b: 0 };
+    /** TapTap menu capsule (top-right): how far it reaches in from the right edge and down from the top, in UI units. */
+    capsule = { w: 0, h: 0 };
     updateSize() {
         const v = this.host.viewSize();
         // enlarge the UI on small (phone) screens so text stays readable
@@ -102,6 +104,8 @@ export class UI {
         this.W = v.w / this.scale - sf.l - sf.r;
         this.H = v.h / this.scale - sf.t - sf.b;
         this.root.setPosition((sf.l - sf.r) / 2 * this.scale, (sf.b - sf.t) / 2 * this.scale, 0);
+        const cap = capsuleCss();
+        this.capsule = cap ? { w: Math.max(0, cap.w * k - sf.r) + 10, h: Math.max(0, cap.h * k - sf.t) + 8 } : { w: 0, h: 0 };
     }
 
     get L() { return -this.W / 2; }
@@ -256,7 +260,7 @@ export class UI {
         const tops: [string, () => void][] = [['玩法', () => this.howToPopup()], ['图鉴', () => this.showCodex()]];
         tops.forEach(([txt, cb], i) => {
             const b = pill(s, tw, th, txt, cb, { fontSize: 22 });
-            b.node.setPosition(this.R - tw / 2 - 20 - (tops.length - 1 - i) * (tw + 14), this.T - th / 2 - 16);
+            b.node.setPosition(this.R - tw / 2 - 20 - this.capsule.w - (tops.length - 1 - i) * (tw + 14), this.T - th / 2 - 16);
         });
         // bottom right: records
         const d = Save.data;
@@ -597,7 +601,7 @@ export class UI {
         this.bossNode.active = false;
         // pause
         const pb = button(h, 64, 64, 'II', COL.btnDark, () => this.host.pause(), 28);
-        pb.node.setPosition(this.R - 52, this.T - 48);
+        pb.node.setPosition(this.R - 52 - this.capsule.w, this.T - 48);
     }
 
     hideHud() { clearChildren(this.hudLayer); this.hud = null; this.joyBase = null; this.joyKnob = null; }
@@ -742,8 +746,9 @@ export class UI {
         drawRR(g, sz, sz, TIER_BG[it.tier - 1], TIER_COLORS[it.tier - 1], 9, 3);
         icon(n, 'g_' + it.glyph, sz * 0.74, sz * 0.74, it.color);
         if (count > 1) {
-            const cl = label(n, 'x' + count, 14, '#ffffff', { outline: 2, align: 'right' });
-            cl.node.setPosition(sz / 2 - 3, -sz / 2 + 10);
+            const fs = sz < 40 ? 12 : 14;
+            const cl = label(n, 'x' + count, fs, '#ffffff', { outline: 2, align: 'right' });
+            cl.node.setPosition(sz / 2 - 3, -sz / 2 + fs * 0.7);
         }
         return n;
     }
@@ -815,8 +820,8 @@ export class UI {
             const ml = label(s, `◆ ${run.mats}`, 28, COL.mat, { align: 'left' });
             ml.node.setPosition(this.L + 30, this.B + 70);
             if (statW) {
-                const sp = this.statsPanel(s, statW, this.H - 40, run);
-                sp.setPosition(this.R - statW / 2 - 15, 0);
+                const sp = this.statsPanel(s, statW, this.H - 40 - this.capsule.h, run);
+                sp.setPosition(this.R - statW / 2 - 15, -this.capsule.h / 2);
             }
         };
         build();
@@ -846,9 +851,13 @@ export class UI {
         this.clearScreen();
         const s = this.screen;
         blocker(s, 200);
-        const rarity = tier >= 2 ? Math.max(3, run.rollTier(0.15)) : run.rollTier(0.05);
-        const it = run.randomItem(Math.min(4, rarity));
-        Save.seeItem(it.id);
+        const roll = (t: number) => {
+            const rarity = t >= 2 ? Math.max(3, run.rollTier(0.15)) : run.rollTier(0.05);
+            const r = run.randomItem(Math.min(4, rarity));
+            Save.seeItem(r.id);
+            return r;
+        };
+        const it = roll(tier);
         const t = label(s, tier >= 2 ? '精英宝箱！' : '发现补给箱！', 46, COL.gold, { outline: 6 });
         t.node.setPosition(0, this.T - 56);
         if (run.crates.length > 0) {
@@ -859,13 +868,28 @@ export class UI {
         c.setPosition(0, -5);
         popIn(c);
         const recycle = Math.max(1, Math.round(run.itemPrice(it.id) * 0.35));
-        const take = button(s, 200, 70, '拿取', COL.btn, () => { run.addItem(it.id); Sfx.buy(); onDone(); }, 30);
-        take.node.setPosition(-115, this.B + 55);
-        const rec = button(s, 200, 70, `回收 ◆${recycle}`, COL.green, () => { run.mats += recycle; Sfx.sell(); onDone(); }, 26);
-        rec.node.setPosition(115, this.B + 55);
+        const row: { node: Node; w: number }[] = [];
+        const bw = run.crates.length > 0 ? 180 : 200;
+        const take = button(s, bw, 70, '拿取', COL.btn, () => { run.addItem(it.id); Sfx.buy(); onDone(); }, 30);
+        row.push({ node: take.node, w: bw });
+        const rec = button(s, bw, 70, `回收 ◆${recycle}`, COL.green, () => { run.mats += recycle; Sfx.sell(); onDone(); }, 26);
+        row.push({ node: rec.node, w: bw });
+        // take this item and open every remaining crate straight into the inventory
+        if (run.crates.length > 0) {
+            const n = run.crates.length + 1;
+            const all = button(s, 220, 70, `全部拿取 ×${n}`, COL.mat, () => {
+                run.addItem(it.id);
+                const names = [it.name];
+                while (run.crates.length) { const r = roll(run.crates.shift()); run.addItem(r.id); names.push(r.name); }
+                Sfx.buy();
+                onDone(); // opens the shop, which clears this screen and the popup layer, so toast after
+                this.toast(`获得 ${n} 件物品：${names.length > 6 ? names.slice(0, 6).join('、') + '…' : names.join('、')}`, COL.gold, 0, 24);
+            }, 26);
+            row.push({ node: all.node, w: 220 });
+        }
         // rewarded ad: take it and get another item of the same quality (once per wave)
         if (Ads.visible('crate') && run.adCrateWave !== run.wave) {
-            const ab = adButton(s, 260, 70, '再拿一件同品质', () => {
+            const ab = adButton(s, 250, 70, '再拿一件同品质', () => {
                 Ads.show('crate').then(r => {
                     if (!r.ok) { this.toast(r.msg, COL.gold, 0, 26); return; }
                     run.adCrateWave = run.wave;
@@ -878,9 +902,16 @@ export class UI {
                     onDone();
                 });
             }, 22);
-            ab.node.setPosition(210, this.B + 55);
-            take.node.setPosition(-250, this.B + 55);
-            rec.node.setPosition(-30, this.B + 55);
+            row.push({ node: ab.node, w: 250 });
+        }
+        const gap = 18;
+        const total = row.reduce((a, b) => a + b.w, 0) + gap * (row.length - 1);
+        const k = Math.min(1, (this.W - 40) / total);
+        let x = -total * k / 2;
+        for (const b of row) {
+            b.node.setScale(k, k, 1);
+            b.node.setPosition(x + b.w * k / 2, this.B + 55);
+            x += (b.w + gap) * k;
         }
     }
 
@@ -916,8 +947,8 @@ export class UI {
         const refreshStats = () => {
             clearChildren(statsHolder);
             if (narrow) return;
-            const sp = this.statsPanel(statsHolder, statW, this.H - 120, run);
-            sp.setPosition(this.R - statW / 2 - 15, 45);
+            const sp = this.statsPanel(statsHolder, statW, this.H - 120 - this.capsule.h, run);
+            sp.setPosition(this.R - statW / 2 - 15, 45 - this.capsule.h / 2);
         };
         const refreshMats = () => { matL.string = '' + run.mats; };
         const cw = Math.min(250, (areaW - 3 * 14) / 4);
@@ -1109,8 +1140,8 @@ export class UI {
         const t = label(p, '暂停', 56, COL.gold, { outline: 6 });
         t.node.setPosition(0, this.T - 60);
         const statW = this.W < 900 ? 240 : 300;
-        const sp = this.statsPanel(p, statW, this.H - 40, run);
-        sp.setPosition(this.R - statW / 2 - 15, 0);
+        const sp = this.statsPanel(p, statW, this.H - 40 - this.capsule.h, run);
+        sp.setPosition(this.R - statW / 2 - 15, -this.capsule.h / 2);
         // inventory
         const areaL = this.L + 30;
         const wl = label(p, '武器', 22, COL.text, { align: 'left' });
@@ -1128,21 +1159,29 @@ export class UI {
         const il = label(p, '物品', 22, COL.text, { align: 'left' });
         il.node.setPosition(areaL, this.T - 235);
         const areaW = this.W - statW - 80;
-        const per = Math.max(1, Math.floor(areaW / 52));
+        // buttons sit in one row at the bottom; item cells shrink until every item fits above them
+        const btnY = this.B + 42;
+        const gridTop = this.T - 250, gridBottom = btnY + 32 + 12;
+        const n = run.itemOrder.length;
+        let sz = 46, per = 1;
+        for (; sz >= 26; sz -= 2) {
+            per = Math.max(1, Math.floor((areaW + 6) / (sz + 6)));
+            if (Math.ceil(n / per) * (sz + 6) - 6 <= gridTop - gridBottom) break;
+        }
+        sz = Math.max(26, sz);
+        const pitch = sz + 6;
         run.itemOrder.forEach((id, i) => {
             const it = ITEM_MAP[id];
-            const c = this.itemCell(p, it, run.items[id], 46);
-            c.setPosition(areaL + 23 + (i % per) * 52, this.T - 270 - Math.floor(i / per) * 52);
+            const c = this.itemCell(p, it, run.items[id], sz);
+            c.setPosition(areaL + sz / 2 + (i % per) * pitch, gridTop - sz / 2 - Math.floor(i / per) * pitch);
             tappable(c, () => this.infoPopup((pp, w, h) => {
                 this.card(pp, w - 20, h - 20, it.tier, 'g_' + it.glyph, it.color, it.name, '物品', itemLines(it), false);
             }, 320, 320));
         });
         const cx = areaL + areaW / 2;
-        const res = button(p, 260, 70, '继续', COL.btn, () => { clearChildren(this.popup); this.host.resume(); }, 32);
-        res.node.setPosition(cx, this.B + 170);
-        const st = button(p, 200, 50, '设置', COL.btnDark, () => this.showSettings(true), 22);
-        st.node.setPosition(cx, this.B + 95);
-        const quit = button(p, 200, 50, '放弃本局', COL.red, () => {
+        const res = button(p, 240, 64, '继续', COL.btn, () => { clearChildren(this.popup); this.host.resume(); }, 30);
+        const st = button(p, 170, 56, '设置', COL.btnDark, () => this.showSettings(true), 22);
+        const quit = button(p, 170, 56, '放弃本局', COL.red, () => {
             this.infoPopup((pp, w, h) => {
                 const q = label(pp, '确定放弃本局吗？', 28, COL.text);
                 q.node.setPosition(0, 40);
@@ -1152,7 +1191,15 @@ export class UI {
                 n.node.setPosition(80, -50);
             }, 380, 220);
         }, 22);
-        quit.node.setPosition(cx, this.B + 30);
+        const row = [{ b: res, w: 240 }, { b: st, w: 170 }, { b: quit, w: 170 }];
+        const gap = 16, total = 240 + 170 + 170 + gap * 2;
+        const k = Math.min(1, areaW / total);
+        let x = cx - total * k / 2;
+        for (const r of row) {
+            r.b.node.setScale(k, k, 1);
+            r.b.node.setPosition(x + r.w * k / 2, btnY);
+            x += (r.w + gap) * k;
+        }
     }
 
     // ================================================================ revive offer (rewarded ad)
@@ -1265,4 +1312,28 @@ function safeInsetsCss(gameW: number, gameH: number) {
         else { out.l = l; out.r = r; out.t = t; out.b = b; }
     } catch (e) { /* no CSS env support */ }
     return out;
+}
+
+declare const tap: any;
+
+/**
+ * The TapTap host draws its menu capsule (··· and close) over the top-right corner of the page.
+ * Returns how far it reaches in from the right edge (w) and down from the top (h) in CSS pixels, or null
+ * outside TapTap. ?capsule=1 in the URL simulates it in a normal browser.
+ */
+function capsuleCss(): { w: number; h: number } | null {
+    if (typeof window === 'undefined') return null;
+    let sim = false;
+    try { sim = /[?&]capsule=1/.test(location.search); } catch (e) { /* no location */ }
+    const host = typeof tap !== 'undefined' ? tap : null;
+    if (!host && !sim) return null;
+    try {
+        if (host && host.getMenuButtonBoundingClientRect) {
+            const r = host.getMenuButtonBoundingClientRect();
+            const iw = window.innerWidth, ih = window.innerHeight;
+            // only trust a rect in the top-right quarter of a landscape window
+            if (r && r.width > 0 && iw > ih && r.left > iw / 2 && r.bottom < ih / 2) return { w: iw - r.left, h: r.bottom };
+        }
+    } catch (e) { /* API missing or failed */ }
+    return { w: 104, h: 50 }; // typical capsule: about 87 x 32 px, 7-10 px from the corner
 }

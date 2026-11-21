@@ -12,7 +12,7 @@ export interface StatDef { key: StatKey; name: string; pct: boolean; primary: bo
 export const STAT_DEFS: StatDef[] = [
     { key: 'maxHp', name: '最大生命', pct: false, primary: true, desc: '生命值上限' },
     { key: 'regen', name: '生命再生', pct: false, primary: true, desc: '每秒恢复 0.2×再生 点生命' },
-    { key: 'lifesteal', name: '生命窃取', pct: true, primary: true, desc: '每次命中有几率恢复1点生命' },
+    { key: 'lifesteal', name: '生命窃取', pct: true, primary: true, desc: '每次命中有几率恢复1点生命（每秒最多4点）' },
     { key: 'damage', name: '伤害', pct: true, primary: true, desc: '所有伤害的百分比加成' },
     { key: 'melee', name: '近战伤害', pct: false, primary: true, desc: '提高近战武器伤害' },
     { key: 'ranged', name: '远程伤害', pct: false, primary: true, desc: '提高远程武器伤害' },

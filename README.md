@@ -70,7 +70,10 @@ This opens http://127.0.0.1:8766/tools/sound-lab.html, a page for reviewing and 
 - **20 waves** (20s, rising to 60s; wave 20 is a 90s boss wave). Elites appear on waves 10 and 15 (two waves earlier on 虚空星港), plus more at higher difficulties. After winning you can keep going in endless mode.
 - **Flow**: menu → stage + difficulty → character → starting weapon.
 - **Crystals**: dropped by enemies, used for both money and XP. Crystals left on the ground at wave end go into a bag, and each later pickup draws one extra from it.
-- **Between waves**: level-up choices (with reroll), then crate items (take or recycle), then the shop.
+- **Between waves**: level-up choices (with reroll), then crate items (take, recycle, or take all remaining crates at once), then the shop.
+- **Crates**: elites and bosses always drop chests, trees sometimes drop crates. Regular kills drop at most 2 crates per wave (3 with 50+ luck), and each one makes the next rarer.
+- **Late-game ramp** (`World.ts` constants): after wave 5 enemies gain +6% HP, +8% damage per wave, and after wave 8 +1.2% speed per wave (capped at wave 20; endless has its own multiplier). Hit invulnerability is 0.5 s and lifesteal heals at most 4 HP per second, so a tanky build cannot stand still forever.
+- **TapTap capsule**: inside TapTap the host's menu capsule covers the top-right corner. `UI.capsule` (from `tap.getMenuButtonBoundingClientRect`, else a typical size) keeps the pause button, menu pills and stats panels clear of it. `?capsule=1` simulates it in a browser.
 - **Shop**: 4 slots, lock, reroll (price rises per reroll), and buy weapons/items. Two copies of a weapon at the same tier combine into the next tier (I–IV). Weapons can be sold.
 - **Weapon class set bonuses**: blunt, blade, gun, precise, elemental, explosive, tool, support, primitive, heavy.
 - **29 stats**: 16 primary (HP, regen, lifesteal, damage %, melee/ranged/elemental, attack speed, crit, engineering, range, armor, dodge, speed, luck, harvest) plus secondary ones.

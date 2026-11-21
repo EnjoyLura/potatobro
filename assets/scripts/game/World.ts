@@ -23,8 +23,12 @@ const SPAWN_COUNT = 2.0;    // enemies per spawn burst
 const SPAWN_RATE = 0.7;     // spawn interval multiplier (lower = more often)
 const ENEMY_HP = 1.65;      // regular enemy health
 const ELITE_HP = 1.5;       // elites and bosses
-const LATE_FROM = 6;        // wave after which health keeps ramping
-const LATE_HP = 0.035;      // extra health per wave after LATE_FROM (+3.5% each)
+const LATE_FROM = 5;        // wave after which enemies keep ramping
+const LATE_HP = 0.06;       // extra health per wave after LATE_FROM (+6% each)
+const LATE_DMG = 0.08;      // extra damage per wave after LATE_FROM (+8% each)
+const LATE_SPEED = 0.012;   // extra move speed per wave after wave 8 (+1.2% each)
+const HIT_IFRAME = 0.5;     // invulnerability after taking a hit (s)
+const LIFESTEAL_CAP = 4;    // lifesteal heals at most this many HP per second
 
 export interface WorldHost {
     onWaveEnd(): void;
@@ -118,6 +122,7 @@ export class World {
     pools: { [k: string]: SpritePool } = {};
     // player
     px = 0; py = 0; pvx = 0; pvy = 0; playerSpr: Sprite; playerFrame = ''; facing = 1; iframe = 0; flashT = 0; walkT = 0;
+    killCrates = 0; // crates dropped by regular kills this wave
     regenAcc = 0; lifestealWindow = 0; lifestealCount = 0; shieldLeft = 0; reviveLeft = 0; dead = false; deadT = 0;
     // input
     moveX = 0; moveY = 0;
@@ -235,6 +240,7 @@ export class World {
 
     startWave() {
         const run = this.run;
+        this.killCrates = 0;
         this.clearAll(false);
         this.dead = false;
         this.px = 0; this.py = 0;
@@ -541,7 +547,7 @@ export class World {
         const mult = arm >= 0 ? 1 - arm / (arm + 15) : 1 + (-arm) / 15;
         const final = Math.max(1, Math.round(dmg * mult));
         run.hp -= final;
-        this.iframe = 0.75; // after a hit: long enough that a crowd cannot shred you in a few frames
+        this.iframe = HIT_IFRAME; // after a hit: long enough that a crowd cannot shred you in a few frames
         this.flashT = 0.15;
         this.addShake(9);
         this.freeze(0.06);
@@ -677,14 +683,16 @@ export class World {
         e.x = x; e.y = y;
         const w = run.wave;
         const dd = run.dangerDef;
-        let hp = (def.hp + def.hpW * (w - 1)) * (def.neutral ? 1 : (def.elite ? ELITE_HP : ENEMY_HP) * (1 + Math.max(0, w - LATE_FROM) * LATE_HP));
-        let dmg = def.dmg + def.dmgW * (w - 1);
+        // late ramp stops at wave 20; endless has its own multiplier below
+        const late = Math.max(0, Math.min(20, w) - LATE_FROM);
+        let hp = (def.hp + def.hpW * (w - 1)) * (def.neutral ? 1 : (def.elite ? ELITE_HP : ENEMY_HP) * (1 + late * LATE_HP));
+        let dmg = (def.dmg + def.dmgW * (w - 1)) * (1 + late * LATE_DMG);
         if (def.boss) { hp = def.hp * ELITE_HP; dmg = def.dmg; }
         if (run.endless && w > 20) { const k = 1 + (w - 20) * 0.25; hp *= k * k; dmg *= k; }
         const st = run.stage;
         e.maxHp = e.hp = Math.max(1, Math.round(hp * dd.hpMul * (def.neutral ? 1 : st.enemyHp)));
         e.dmg = Math.max(def.neutral ? 0 : 1, Math.round(dmg * dd.dmgMul * st.enemyDmg));
-        e.speed = def.speed * rand(0.9, 1.1) * st.enemySpeed;
+        e.speed = def.speed * rand(0.9, 1.1) * st.enemySpeed * (def.neutral ? 1 : 1 + Math.max(0, Math.min(20, w) - 8) * LATE_SPEED);
         Save.seeEnemy(def.id);
         e.r = def.r;
         e.phase = rand(0, TAU);
@@ -1167,7 +1175,7 @@ export class World {
             let ls = run.stats.lifesteal / 100;
             if (wi && (wi as any).def && (wi as WeaponInst).def.lifesteal) ls += (wi as WeaponInst).def.lifesteal;
             if (wi && (wi as Bullet).lifesteal) ls += (wi as Bullet).lifesteal;
-            if (ls > 0 && this.lifestealCount < 10 && chance(ls)) { this.lifestealCount++; this.healPlayer(1); }
+            if (ls > 0 && this.lifestealCount < LIFESTEAL_CAP && chance(ls)) { this.lifestealCount++; this.healPlayer(1); }
             if (crit && run.special.critHeal && chance(run.special.critHeal / 100)) this.healPlayer(1);
         }
         if (e.hp <= 0) this.killEnemy(e, false);
@@ -1224,7 +1232,11 @@ export class World {
             if (e.def.boss) this.spawnPickup('crate', e.x + 30, e.y, 2);
         } else {
             if (chance(0.012 * luck)) this.spawnPickup('fruit', e.x, e.y);
-            else if (chance(0.007 * luck)) this.spawnPickup('crate', e.x, e.y, 1);
+            // regular kills: each crate this wave makes the next one rarer, and at most 2 (3 with 50+ luck) per wave
+            else if (this.killCrates < (luck >= 1.5 ? 3 : 2) && chance(0.006 * luck * Math.pow(0.35, this.killCrates))) {
+                this.killCrates++;
+                this.spawnPickup('crate', e.x, e.y, 1);
+            }
         }
         if (e.def.onDeath) this.addZone(e.def.onDeath, e.x, e.y, e.def.onDeath === 'slow' ? 120 : 105, 3.2);
         // splitter children
