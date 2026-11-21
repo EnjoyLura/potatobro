@@ -186,7 +186,7 @@ function detail(ui: UI, p: Node, w: number, h: number, e: Entry | undefined) {
     let name = '???', tags: [string, string][] = [];
     if (!e.known) {
         lines.push({ t: '尚未发现。', c: COL.dim });
-        lines.push({ t: state.tab === 'e' ? '在战斗中遇到后解锁。' : '在商店或补给箱中见到后解锁。', c: COL.dim });
+        lines.push({ t: state.tab === 'e' ? '在战斗中遇到后解锁。' : '购买或从补给箱拿取后解锁（回收不算）。', c: COL.dim });
     } else if (state.tab === 'w') {
         const def: WeaponDef = WEAPONS.filter(x => x.id === e.id)[0];
         name = def.name;

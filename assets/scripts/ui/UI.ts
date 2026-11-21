@@ -236,16 +236,8 @@ export class UI {
             ['开始游戏', () => this.showStageSelect(), COL.gold],
             ['设置', () => this.showSettings(false), '#ffffff'],
         ];
-        if (screen.supportsFullScreen) {
-            items.push([screen.fullScreen() ? '退出全屏' : '全屏', () => {
-                if (screen.fullScreen()) screen.exitFullScreen().catch(() => { });
-                else screen.requestFullScreen().then(() => {
-                    // phones: also try to hold landscape while fullscreen
-                    const so: any = (window as any).screen && (window as any).screen.orientation;
-                    if (so && so.lock) so.lock('landscape').catch(() => { });
-                }).catch(() => { });
-            }, '#ffffff']);
-        }
+        // 退出游戏 (replaces the old fullscreen toggle, which froze the game inside TapTap)
+        items.push(['退出游戏', () => this.confirmExit(), '#ffffff']);
         let by = this.T - H * 0.47 - bh / 2;
         for (const [txt, cb, col] of items) {
             const b = pill(s, bw, bh, txt, cb, { textColor: col, fontSize: Math.round(bh * 0.44) });
@@ -268,6 +260,19 @@ export class UI {
         const rw = Math.min(this.R - artL - 20, 470);
         const rec = pill(s, rw, 46, recTxt, () => this.recordsPopup(), { fontSize: 18, textColor: COL.dim });
         rec.node.setPosition(this.R - rw / 2 - 20, this.B + 23 + 16);
+    }
+
+    /** Ask, then leave the game: the TapTap host's exit API if there is one, else close the page. */
+    confirmExit() {
+        this.infoPopup((pp) => {
+            const q = label(pp, '确定退出游戏吗？', 28, COL.text);
+            q.node.setPosition(0, 40);
+            const close = () => clearChildren(this.popup);
+            const y = button(pp, 140, 56, '退出', COL.red, () => { close(); exitGame(() => this.toast('请点击右上角的关闭按钮退出', COL.gold, 0, 26)); }, 24);
+            y.node.setPosition(-80, -50);
+            const n = button(pp, 140, 56, '取消', COL.btnDark, close, 24);
+            n.node.setPosition(80, -50);
+        }, 380, 220);
     }
 
     showStageSelect() { showStageSelect(this); }
@@ -498,7 +503,6 @@ export class UI {
         const st = label(s, `${this.selStage.name}  ·  ${this.dangerLabel()}  ·  ${c.name}`, 20, COL.gold, { outline: 3 });
         st.node.setPosition(0, this.T - 76);
         const ws = c.weapons;
-        for (const id of ws) Save.seeWeapon(id);
         const cw = Math.min(196, (this.W - 60 - (ws.length - 1) * 14) / ws.length), ch = Math.min(330, this.H - 220);
         const x0 = -((ws.length - 1) * (cw + 14)) / 2;
         const cardY = (this.T - 100 + this.B + 92) / 2;
@@ -852,10 +856,9 @@ export class UI {
         const s = this.screen;
         blocker(s, 200);
         const roll = (t: number) => {
-            const rarity = t >= 2 ? Math.max(3, run.rollTier(0.15)) : run.rollTier(0.05);
-            const r = run.randomItem(Math.min(4, rarity));
-            Save.seeItem(r.id);
-            return r;
+            // elite chests: at least uncommon, better odds; normal crates: slightly better than the shop
+            const rarity = t >= 2 ? Math.max(2, run.rollTier(1.6)) : run.rollTier(1.2);
+            return run.randomItem(Math.min(4, rarity));
         };
         const it = roll(tier);
         const t = label(s, tier >= 2 ? '精英宝箱！' : '发现补给箱！', 46, COL.gold, { outline: 6 });
@@ -895,7 +898,6 @@ export class UI {
                     run.adCrateWave = run.wave;
                     run.addItem(it.id);
                     const extra = run.randomItem(it.tier);
-                    Save.seeItem(extra.id);
                     run.addItem(extra.id);
                     Sfx.buy();
                     this.toast(`获得 ${it.name} 和 ${extra.name}`, COL.gold, 0, 28);
@@ -981,7 +983,6 @@ export class UI {
         const buildCards = () => {
             clearChildren(cards);
             run.shop.forEach((slot, i) => {
-                if (slot.kind === 'weapon') Save.seeWeapon(slot.id); else Save.seeItem(slot.id);
                 const x = areaL + cw / 2 + i * (cw + 14);
                 const y = this.T - 76 - ch / 2;
                 if (slot.sold) {
@@ -1336,4 +1337,20 @@ function capsuleCss(): { w: number; h: number } | null {
         }
     } catch (e) { /* API missing or failed */ }
     return { w: 104, h: 50 }; // typical capsule: about 87 x 32 px, 7-10 px from the corner
+}
+
+/**
+ * Leave the game. Inside TapTap: the host's exit API (WeChat-style name first). In a browser: window.close(),
+ * which only works for pages opened by script, so onStuck runs if the page is still here shortly after.
+ */
+function exitGame(onStuck: () => void) {
+    Save.save();
+    const host = typeof tap !== 'undefined' ? tap : null;
+    for (const fn of ['exitMiniProgram', 'exitGame', 'exit']) {
+        try {
+            if (host && typeof host[fn] === 'function') { host[fn]({ fail: () => onStuck() }); return; }
+        } catch (e) { /* try the next one */ }
+    }
+    try { window.close(); } catch (e) { /* not allowed */ }
+    setTimeout(() => { if (!window.closed) onStuck(); }, 400);
 }

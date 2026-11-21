@@ -7,6 +7,7 @@ import { UPGRADES, UpgradeDef } from '../data/Upgrades';
 import { DANGERS } from '../data/Enemies';
 import { StageDef, STAGES } from '../data/Stages';
 import { chance, pick, shuffle, weightedPick } from '../core/Util';
+import { Save } from '../core/Save';
 
 export interface OwnedWeapon { id: string; tier: number; uid: number }
 export interface ShopSlot { kind: 'weapon' | 'item'; id: string; tier: number; price: number; sold?: boolean }
@@ -57,6 +58,7 @@ export class Run {
         this.stage = stage;
         this.mats = stage.startMats;
         this.weapons.push({ id: weaponId, tier: Math.max(1, WEAPON_MAP[weaponId].minTier || 1), uid: UID++ });
+        Save.seeWeapon(weaponId);
         if (char.startItems) for (const id of char.startItems) this.addItem(id);
         this.recompute();
         this.hp = this.maxHp;
@@ -125,13 +127,17 @@ export class Run {
         const lvl = this.level;
         const pool = shuffle(UPGRADES.slice()).slice(0, 4);
         return pool.map(up => {
-            const r = Math.random() * (1 + this.stats.luck / 200);
+            // capped odds (they used to keep growing with level until almost every choice was rare or legendary)
+            const luck = 1 + Math.max(0, this.stats.luck) / 200;
+            const t4 = (lvl >= 12 ? Math.min(0.06, (lvl - 11) * 0.006) : 0) * luck;
+            const t3 = (lvl >= 7 ? Math.min(0.18, 0.04 + (lvl - 7) * 0.012) : 0) * luck;
+            const t2 = (lvl >= 3 ? Math.min(0.45, 0.15 + (lvl - 3) * 0.02) : 0.05) * luck;
+            const r = Math.random();
             let tier = 0;
-            const t4 = lvl >= 10 ? 0.05 + (lvl - 10) * 0.012 : 0;
-            const t3 = lvl >= 6 ? 0.12 + (lvl - 6) * 0.02 : 0;
-            const t2 = lvl >= 2 ? 0.3 + lvl * 0.02 : 0.08;
-            if (r > 1 - t4) tier = 3; else if (r > 1 - t4 - t3) tier = 2; else if (r > 1 - t4 - t3 - t2) tier = 1;
-            if (lvl % 5 === 0 && lvl > 0 && tier < 2) tier = 2; // milestone levels give better choices
+            if (r < t4) tier = 3; else if (r < t4 + t3) tier = 2; else if (r < t4 + t3 + t2) tier = 1;
+            // milestone levels: every 5th at least uncommon, every 10th at least rare
+            if (lvl > 0 && lvl % 10 === 0 && tier < 2) tier = 2;
+            else if (lvl > 0 && lvl % 5 === 0 && tier < 1) tier = 1;
             return { up, tier, value: up.values[tier] };
         });
     }
@@ -147,6 +153,7 @@ export class Run {
     addItem(id: string) {
         const before = this.maxHp;
         this.items[id] = (this.items[id] || 0) + 1;
+        Save.seeItem(id); // codex: unlocked once owned (bought, taken from a crate, or a starting item)
         if (this.itemOrder.indexOf(id) < 0) this.itemOrder.push(id);
         this.recompute();
         if (this.maxHp > before) this.hp += this.maxHp - before;
@@ -167,6 +174,7 @@ export class Run {
     }
     addWeapon(id: string, tier: number): boolean {
         if (!this.canAddWeapon(id, tier)) return false;
+        Save.seeWeapon(id); // codex: unlocked once owned (starting pick or bought)
         if (this.weapons.length >= MAX_WEAPONS) {
             const w = this.weapons.find(x => x.id === id && x.tier === tier);
             w.tier++;
@@ -216,12 +224,13 @@ export class Run {
         return p;
     }
 
-    rollTier(bonus = 0): number {
-        const w = this.wave, luck = 1 + this.stats.luck / 100;
-        const t4 = w >= 8 ? Math.min(0.08, (w - 7) * 0.006) * luck : 0;
-        const t3 = w >= 4 ? Math.min(0.25, (w - 3) * 0.02) * luck : 0;
-        const t2 = w >= 2 ? Math.min(0.6, (w - 1) * 0.06) * luck : 0;
-        const r = Math.random() - bonus;
+    /** Shop / crate quality: 1 common .. 4 legendary. Odds are capped so common items never disappear. */
+    rollTier(boost = 1): number {
+        const w = this.wave, luck = (1 + Math.max(0, this.stats.luck) / 150) * boost;
+        const t4 = w >= 10 ? Math.min(0.05, (w - 9) * 0.004) * luck : 0;
+        const t3 = w >= 5 ? Math.min(0.15, (w - 4) * 0.012) * luck : 0;
+        const t2 = w >= 2 ? Math.min(0.45, (w - 1) * 0.04) * luck : 0;
+        const r = Math.random();
         if (r < t4) return 4;
         if (r < t4 + t3) return 3;
         if (r < t4 + t3 + t2) return 2;

@@ -143,12 +143,12 @@ export function waveDuration(w: number) {
     return Math.min(20 + (w - 1) * 5, 60);
 }
 
-export interface DangerDef { name: string; desc: string; hpMul: number; dmgMul: number; spawnMul: number; color: string }
+export interface DangerDef { name: string; desc: string; hpMul: number; dmgMul: number; spawnMul: number; spdMul: number; color: string }
 export const DANGERS: DangerDef[] = [
-    { name: '难度一', desc: '标准难度', hpMul: 1, dmgMul: 1, spawnMul: 1, color: '#e8e8e8' },
-    { name: '难度二', desc: '敌人数量增加', hpMul: 1, dmgMul: 1, spawnMul: 1.15, color: '#7bdcff' },
-    { name: '难度三', desc: '新增精英敌人（第12波）', hpMul: 1.05, dmgMul: 1.05, spawnMul: 1.2, color: '#5fd35f' },
-    { name: '难度四', desc: '敌人生命与伤害+12%，更多精英', hpMul: 1.12, dmgMul: 1.12, spawnMul: 1.25, color: '#ffd166' },
-    { name: '难度五', desc: '敌人生命与伤害+25%，精英成群', hpMul: 1.25, dmgMul: 1.25, spawnMul: 1.3, color: '#ff9f43' },
-    { name: '难度六', desc: '最终考验：双重首领', hpMul: 1.4, dmgMul: 1.4, spawnMul: 1.4, color: '#ff5c5c' },
+    { name: '难度一', desc: '标准难度', hpMul: 1, dmgMul: 1, spawnMul: 1, spdMul: 1, color: '#e8e8e8' },
+    { name: '难度二', desc: '敌人数量+15%，生命+15%，伤害+10%', hpMul: 1.15, dmgMul: 1.1, spawnMul: 1.15, spdMul: 1, color: '#7bdcff' },
+    { name: '难度三', desc: '数量+30%，生命与伤害+30%，第12波精英', hpMul: 1.3, dmgMul: 1.3, spawnMul: 1.3, spdMul: 1, color: '#5fd35f' },
+    { name: '难度四', desc: '数量+40%，生命+55%，伤害+45%，移速+5%', hpMul: 1.55, dmgMul: 1.45, spawnMul: 1.4, spdMul: 1.05, color: '#ffd166' },
+    { name: '难度五', desc: '数量+50%，生命+85%，伤害+65%，移速+10%', hpMul: 1.85, dmgMul: 1.65, spawnMul: 1.5, spdMul: 1.1, color: '#ff9f43' },
+    { name: '难度六', desc: '生命+120%，伤害+90%，移速+15%，双首领', hpMul: 2.2, dmgMul: 1.9, spawnMul: 1.6, spdMul: 1.15, color: '#ff5c5c' },
 ];

@@ -698,7 +698,7 @@ export class World {
         const st = run.stage;
         e.maxHp = e.hp = Math.max(1, Math.round(hp * dd.hpMul * (def.neutral ? 1 : st.enemyHp)));
         e.dmg = Math.max(def.neutral ? 0 : 1, Math.round(dmg * dd.dmgMul * st.enemyDmg));
-        e.speed = def.speed * rand(0.9, 1.1) * st.enemySpeed * (def.neutral ? 1 : 1 + Math.max(0, Math.min(20, w) - 8) * LATE_SPEED);
+        e.speed = def.speed * rand(0.9, 1.1) * st.enemySpeed * (def.neutral ? 1 : (1 + Math.max(0, Math.min(20, w) - 8) * LATE_SPEED) * dd.spdMul);
         Save.seeEnemy(def.id);
         e.r = def.r;
         e.phase = rand(0, TAU);

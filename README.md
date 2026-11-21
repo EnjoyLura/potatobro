@@ -39,8 +39,8 @@ python tools/deploy_pages.py
 - **Notches and home indicator.** `viewport-fit=cover` lets the game fill the screen. The UI reads `env(safe-area-inset-*)` (mapped to the rotated edges when rotated) and keeps the HUD and buttons inside the safe area.
 - **Small screens.** The UI scales up 1.15–1.3× when the game area is under 640 / 480 CSS px tall. Screens are rebuilt after a resize or rotation.
 - **Shop.** The inventory (weapons, set bonuses, item rows) is measured first and the cards get the remaining height. Card text shrinks to stay above the price buttons, and extra items collapse into a "+N" cell.
-- **Fullscreen.** The main menu has a 全屏 button where the browser supports it (Android, desktop). It also tries to lock landscape.
-- **Main menu.** Title and a stack of pill buttons (开始游戏 / 设置 / 全屏) in a left column, with the version below. The hero art fills the right side. 玩法 / 战绩 / 更新日志 pills run along the top right, and the records line sits at the bottom right.
+- **Exit.** The main menu has a 退出游戏 button (it replaced 全屏, which froze the game inside TapTap). After a confirm it saves, then calls the TapTap host's exit API (`exitMiniProgram`, else `exitGame`). In a browser it tries `window.close()` and otherwise tells the player to use the close button.
+- **Main menu.** Title and a stack of pill buttons (开始游戏 / 设置 / 退出游戏) in a left column, with the version below. The hero art fills the right side. 玩法 / 战绩 / 更新日志 pills run along the top right, and the records line sits at the bottom right.
 - **Settings** (from the menu or the pause screen): 游戏音乐 / 游戏音效 volume sliders, plus 伤害数字 and 屏幕震动 switches, all saved in localStorage. Bump `VERSION` in `ui/UI.ts` and add a line to `changelogPopup` with each release.
 
 ## Sound lab
@@ -93,7 +93,7 @@ Monster art comes from three sources in `core/Art.ts`: hand-drawn base enemies (
 
 ## Codex and saves
 
-- **Codex (图鉴)**: weapons, items and monsters with filters and details. Weapons and items count as discovered once seen in the shop, a crate or the weapon select; monsters once they spawn (kill counts are kept). Undiscovered entries show as silhouettes. Old saves get the first stage's monsters up to their best wave.
+- **Codex (图鉴)**: weapons, items and monsters with filters and details. Weapons and items count as discovered once owned (bought, taken from a crate, starting weapon or item; recycling does not count); monsters once they spawn (kill counts are kept). Undiscovered entries show as silhouettes. Old saves get the first stage's monsters up to their best wave.
 - **Save**: localStorage. Settings stay on the device; progress (best wave, wins, stage clears, runs, kills, play time, codex) is kept apart (`Save.progress()` / `applyProgress()`) for a future cloud sync. `savedAt` changes only when progress changes.
 - **No cloud save (V1.9)**: TapTap cloud save and its 存档 screen were removed so the game passes review as a standalone (单机) game. The old implementation (`core/CloudSave.ts`, `ui/SaveUI.ts`) is in git history before V1.9 and can be restored later.
 
